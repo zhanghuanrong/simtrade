@@ -62,6 +62,7 @@ class MarginCallEvent(BaseModel):
 class Account(BaseModel):
     """Comprehensive trader account ledger state."""
     account_id: str = "trader_1"
+    tag: Optional[str] = None               # Optional simulation pass name / strategy tag
     cash: float = 100_000.0                 # Liquid cash balance (can be negative on margin loan)
     frozen_cash: float = 0.0                # Cash reserved for pending buy limit orders
     borrowed_margin: float = 0.0            # Margin loan from broker (when cash < 0)
@@ -71,5 +72,34 @@ class Account(BaseModel):
     initial_capital: float = 100_000.0      # Starting capital baseline
     positions: Dict[str, Position] = Field(default_factory=dict)
     margin: MarginMetrics = Field(default_factory=MarginMetrics)
+    custom_margin_config: Optional[Dict[str, float]] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class AccountSetupRequest(BaseModel):
+    """Negotiate / configure initial account state for a simulation run pass."""
+    account_id: str = Field(..., description="Unique name/tag for this account / simulation pass")
+    tag: Optional[str] = Field(default=None, description="Descriptive label, e.g. 'momentum_v1_run'")
+    initial_cash: float = Field(default=100_000.0, ge=0.0, description="Starting cash balance")
+    initial_positions: Optional[Dict[str, float]] = Field(default=None, description="Starting positions e.g. {'AAPL': 100, 'TSLA': -20}")
+    initial_entry_prices: Optional[Dict[str, float]] = Field(default=None, description="Optional override entry prices for initial holdings")
+    leverage: Optional[float] = Field(default=None, ge=1.0, description="Max leverage multiplier (e.g. 4.0 for 4x)")
+    initial_margin_rate: Optional[float] = Field(default=None, ge=0.05, le=1.0, description="Initial margin rate (e.g. 0.25)")
+    maintenance_margin_rate: Optional[float] = Field(default=None, ge=0.01, le=1.0, description="Maintenance margin rate (e.g. 0.15)")
+
+
+class AccountSummary(BaseModel):
+    """High-level summary of a simulation account / pass."""
+    account_id: str
+    tag: Optional[str] = None
+    initial_capital: float
+    equity: float
+    cash: float
+    realized_pnl: float
+    unrealized_pnl: float
+    buying_power: float
+    margin_used: float
+    positions_count: int
+    created_at: datetime
+

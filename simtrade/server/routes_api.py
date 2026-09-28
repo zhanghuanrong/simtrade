@@ -166,9 +166,54 @@ def get_simulation_status():
     }
 
 
+@api_router.get("/sim/metadata", tags=["Simulation Control"])
+def get_simulation_metadata():
+    """Get full simulation time range, total bars, cursor, progress, and available tickers."""
+    sim = get_simulator()
+    return sim.get_metadata()
+
+
+class ResetPayload(BaseModel):
+    start_time: Optional[str] = None
+
+
+@api_router.post("/sim/reset", tags=["Simulation Control"])
+def reset_simulation(payload: Optional[ResetPayload] = None):
+    """Reset simulation playback cursor to start a fresh simulation run/pass."""
+    from datetime import datetime
+    sim = get_simulator()
+    st = datetime.fromisoformat(payload.start_time) if payload and payload.start_time else None
+    sim.reset(start_time=st)
+    return {"status": "reset", "current_time": sim.clock.current_time.isoformat()}
+
+
+# -------------------------------------------------------------
+# Account Management & Negotiation Endpoints
+# -------------------------------------------------------------
+from simtrade.models.account import AccountSetupRequest, AccountSummary
+
+
+@api_router.get("/accounts", response_model=List[AccountSummary], tags=["Account"])
+def list_accounts():
+    """List all configured accounts and simulation passes."""
+    sim = get_simulator()
+    return sim.account_mgr.list_accounts()
+
+
+@api_router.post("/account/setup", response_model=Account, tags=["Account"])
+def setup_account(payload: AccountSetupRequest):
+    """Negotiate and configure initial account balance, positions, leverage, and margin terms."""
+    sim = get_simulator()
+    mark_prices = {t: b.close for t, b in sim.latest_bars.items()}
+    return sim.account_mgr.setup_account(payload, mark_prices=mark_prices)
+
+
 # -------------------------------------------------------------
 # Reporting & Tracing Endpoints
 # -------------------------------------------------------------
+from fastapi.responses import Response
+
+
 @api_router.get("/reports/performance", tags=["Reporting"])
 def get_performance_report(account_id: str = "trader_1"):
     """Compute and return Sharpe ratio, max drawdown, win rate, and return metrics."""
@@ -184,3 +229,29 @@ def get_ledger_entries(account_id: Optional[str] = None, event_type: Optional[st
     """Retrieve audit trail of transaction and risk events."""
     sim = get_simulator()
     return sim.ledger.get_entries(account_id=account_id, event_type=event_type, limit=limit)
+
+
+@api_router.get("/reports/trades/csv", tags=["Reporting"])
+def download_trades_csv(account_id: Optional[str] = None):
+    """Export and download trades in CSV format."""
+    sim = get_simulator()
+    csv_content = sim.export_trades_csv(account_id=account_id)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=trades_{account_id or 'all'}.csv"},
+    )
+
+
+class SaveReportPayload(BaseModel):
+    account_id: str = "trader_1"
+    output_dir: str = "reports"
+
+
+@api_router.post("/reports/save", tags=["Reporting"])
+def save_simulation_session(payload: SaveReportPayload):
+    """Save trades CSV, performance JSON, and audit ledger JSON to server reports directory."""
+    sim = get_simulator()
+    files = sim.save_session(account_id=payload.account_id, output_dir=payload.output_dir)
+    return {"status": "saved", "account_id": payload.account_id, "files": files}
+

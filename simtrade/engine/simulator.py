@@ -250,3 +250,107 @@ class Simulator:
         if self._loop_task and not self._loop_task.done():
             self._loop_task.cancel()
         logger.info("Simulator stopped")
+
+    def reset(self, start_time: Optional[datetime] = None):
+        """Reset simulation playback cursor to start a fresh simulation pass."""
+        self.pause()
+        if self.feeder.timeline:
+            self.clock.cursor = 0
+            if start_time:
+                # Find index closest to start_time
+                for idx, t in enumerate(self.feeder.timeline):
+                    if t >= start_time:
+                        self.clock.cursor = idx
+                        break
+            self.clock.current_time = self.feeder.timeline[self.clock.cursor]
+        elif start_time:
+            self.clock.current_time = start_time
+
+        self.clock.step_count = 0
+        self.matcher.active_orders.clear()
+        logger.info(f"Simulator reset to time {self.clock.current_time}")
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get simulation metadata including time range, total bars, and available tickers."""
+        total_bars = len(self.feeder.timeline)
+        is_finished = (self.clock.cursor >= total_bars) if total_bars > 0 else False
+        progress_pct = round((self.clock.cursor / max(1, total_bars)) * 100, 2) if total_bars > 0 else 0.0
+
+        return {
+            "start_time": self.feeder.timeline[0].isoformat() if self.feeder.timeline else None,
+            "end_time": self.feeder.timeline[-1].isoformat() if self.feeder.timeline else None,
+            "current_time": self.clock.current_time.isoformat(),
+            "total_bars": total_bars,
+            "current_step": self.clock.step_count,
+            "cursor": self.clock.cursor,
+            "progress_pct": progress_pct,
+            "is_finished": is_finished,
+            "speed_multiplier": self.clock.speed_multiplier,
+            "is_running": self.clock.is_running,
+            "is_paused": self.clock.is_paused,
+            "available_tickers": self.feeder.tickers,
+            "active_accounts": [a.account_id for a in self.account_mgr.accounts.values()],
+        }
+
+    def export_trades_csv(self, account_id: Optional[str] = None) -> str:
+        """Export executed trades in standard CSV format."""
+        import io
+        import csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["trade_id", "account_id", "order_id", "ticker", "side", "price", "quantity", "notional", "commission", "timestamp"])
+
+        trades = self.all_trades
+        if account_id:
+            trades = [t for t in trades if t.account_id == account_id]
+
+        for t in trades:
+            writer.writerow([
+                t.trade_id,
+                t.account_id,
+                t.order_id,
+                t.ticker,
+                t.side.value,
+                t.price,
+                t.quantity,
+                t.notional,
+                t.commission,
+                t.timestamp.isoformat(),
+            ])
+        return output.getvalue()
+
+    def save_session(self, account_id: str, output_dir: str = "reports") -> Dict[str, str]:
+        """Save all transactions, trades, and performance reports to local disk."""
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+        acc = self.account_mgr.get_or_create_account(account_id)
+        tag = acc.tag or account_id
+
+        # 1. Save trades CSV
+        csv_content = self.export_trades_csv(account_id)
+        csv_file = out_path / f"trades_{tag}.csv"
+        with open(csv_file, "w") as f:
+            f.write(csv_content)
+
+        # 2. Save Performance Report JSON
+        import json
+        from simtrade.reporting.performance import PerformanceAnalytics
+        snapshots = self.ledger.get_snapshots(account_id)
+        trades = [t for t in self.all_trades if t.account_id == account_id]
+        perf = PerformanceAnalytics.calculate(snapshots, trades, initial_capital=acc.initial_capital)
+        perf_file = out_path / f"performance_{tag}.json"
+        with open(perf_file, "w") as f:
+            json.dump(perf, f, indent=2)
+
+        # 3. Save Ledger JSON
+        ledger_entries = [e.model_dump(mode="json") for e in self.ledger.get_entries(account_id=account_id, limit=10000)]
+        ledger_file = out_path / f"ledger_{tag}.json"
+        with open(ledger_file, "w") as f:
+            json.dump(ledger_entries, f, indent=2)
+
+        logger.info(f"Saved simulation pass reports for {account_id} ({tag}) to {output_dir}/")
+        return {
+            "trades_csv": str(csv_file),
+            "performance_json": str(perf_file),
+            "ledger_json": str(ledger_file),
+        }

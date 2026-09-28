@@ -38,6 +38,15 @@ It simulates an exchange and broker environment, publishing synchronized multi-t
 5. **Reporting & Auditing**:
    - Immutable event ledger for all orders, fills, margin calls, and portfolio snapshots.
    - Quantitative performance analytics: Total Return, Sharpe Ratio, Sortino Ratio, Maximum Drawdown ($ and %), Win Rate, and Profit Factor.
+   - One-click export of trades to CSV and complete audit history to JSON.
+
+6. **Multi-Pass Simulation & Run Tagging**:
+   - Tag simulation passes by name (e.g. `momentum_v1_run`, `mean_revert_pass_2`).
+   - Negotiate custom initial account parameters (cash, starting positions, custom leverage/margin rates).
+   - Easily switch between and inspect individual passes in the Web UI.
+   - Reset/rewind simulation to run repeated passes across identical market data.
+
+> 📖 **Full Usage Guide**: See [docs/CLI_AND_CLIENT_USAGE.md](docs/CLI_AND_CLIENT_USAGE.md) for detailed instructions on connecting, querying time ranges, account negotiation, simulation controls, and UI inspection.
 
 ---
 

@@ -17,6 +17,7 @@
       --accent-red: #ef4444;
       --accent-blue: #38bdf8;
       --accent-amber: #f59e0b;
+      --accent-purple: #a855f7;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -31,10 +32,12 @@
       justify-content: space-between;
       align-items: center;
       background: var(--bg-card);
-      padding: 14px 24px;
+      padding: 14px 20px;
       border-radius: 12px;
       border: 1px solid var(--border);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 12px;
     }
     .brand { display: flex; align-items: center; gap: 12px; }
     .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent-blue); }
@@ -47,12 +50,12 @@
     }
     .badge-running { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
     .badge-paused { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
-    .controls { display: flex; align-items: center; gap: 10px; }
+    .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     button {
       background: var(--bg-card-hover);
       color: var(--text-main);
       border: 1px solid var(--border);
-      padding: 8px 14px;
+      padding: 7px 12px;
       border-radius: 8px;
       cursor: pointer;
       font-size: 13px;
@@ -64,10 +67,43 @@
     button.btn-primary:hover { background: #0369a1; }
     button.btn-success { background: #059669; border-color: #10b981; }
     button.btn-danger { background: #dc2626; border-color: #ef4444; }
+    button.btn-purple { background: #7e22ce; border-color: #a855f7; }
+
+    /* Metadata Bar */
+    .metadata-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #111827;
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .progress-track {
+      width: 150px;
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--accent-blue);
+      width: 0%;
+      transition: width 0.3s;
+    }
     
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
       gap: 12px;
       margin-bottom: 16px;
     }
@@ -75,10 +111,10 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 14px;
+      padding: 12px 14px;
     }
     .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-    .stat-val { font-size: 20px; font-weight: 700; }
+    .stat-val { font-size: 19px; font-weight: 700; }
     .positive { color: var(--accent-green); }
     .negative { color: var(--accent-red); }
 
@@ -97,33 +133,54 @@
       border-radius: 10px;
       padding: 16px;
     }
-    .panel h2 { font-size: 15px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .panel h2 { font-size: 14px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 
     .ticker-row {
       display: flex;
       justify-content: space-between;
-      padding: 10px 0;
+      padding: 8px 0;
       border-bottom: 1px solid var(--border);
     }
-    .ticker-symbol { font-weight: 700; font-size: 15px; }
-    .ticker-price { font-weight: 600; font-size: 15px; }
+    .ticker-symbol { font-weight: 700; font-size: 14px; }
+    .ticker-price { font-weight: 600; font-size: 14px; }
 
-    .order-form { display: flex; flex-direction: column; gap: 10px; }
+    .order-form { display: flex; flex-direction: column; gap: 8px; }
     .form-group { display: flex; flex-direction: column; gap: 4px; }
     .form-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
     .form-group input, .form-group select {
       background: var(--bg-dark);
       border: 1px solid var(--border);
       color: var(--text-main);
-      padding: 8px 10px;
+      padding: 7px 10px;
       border-radius: 6px;
       font-size: 13px;
     }
 
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { text-align: left; padding: 8px 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 600; }
-    td { padding: 10px; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+    td { padding: 9px 10px; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
     .table-panel { max-height: 280px; overflow-y: auto; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 440px;
+      max-width: 90vw;
+    }
+    .modal h3 { font-size: 18px; margin-bottom: 16px; color: var(--accent-blue); }
   </style>
 </head>
 <body>
@@ -132,20 +189,44 @@
     <div class="brand">
       <h1>SimTrade Server</h1>
       <span id="sim-status-badge" class="badge badge-paused">PAUSED</span>
-      <span id="sim-clock" style="font-size: 14px; color: var(--accent-blue); font-family: monospace;">2026-01-05 09:30:00</span>
+      <!-- Simulation Pass Selector -->
+      <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
+        <span style="font-size: 12px; color: var(--text-muted);">Pass/Account:</span>
+        <select id="account-selector" onchange="onAccountChange(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 10px; border-radius:6px; font-weight:600; font-size:12px;">
+          <option value="trader_1">trader_1 (Default)</option>
+        </select>
+        <button onclick="openNewPassModal()" class="btn-purple" style="padding: 5px 9px; font-size: 11px;">+ New Pass</button>
+      </div>
     </div>
     <div class="controls">
       <button onclick="sendSimControl('start')" class="btn-success">Play</button>
       <button onclick="sendSimControl('pause')" class="btn-danger">Pause</button>
       <button onclick="sendSimControl('step')" class="btn-primary">Step 1m</button>
-      <span style="font-size: 12px; color: var(--text-muted); margin-left: 10px;">Speed:</span>
+      <button onclick="resetSimulation()" style="background:#4b5563;">Reset Run</button>
+      <span style="font-size: 12px; color: var(--text-muted); margin-left: 6px;">Speed:</span>
       <button onclick="setSpeed(1)">1x</button>
       <button onclick="setSpeed(10)">10x</button>
       <button onclick="setSpeed(60)">60x</button>
       <button onclick="setSpeed(0)">MAX</button>
-      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API Docs</button></a>
+      <button onclick="exportTradesCSV()">Export Trades</button>
+      <button onclick="openPerformanceModal()">Report</button>
+      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API</button></a>
     </div>
   </header>
+
+  <!-- Metadata Bar -->
+  <div class="metadata-bar">
+    <div>
+      <span>Range: </span><strong id="meta-range" style="color:var(--text-main);">Loading...</strong>
+    </div>
+    <div>
+      <span>Current Sim Time: </span><strong id="sim-clock" style="color:var(--accent-blue); font-family:monospace;">--:--:--</strong>
+    </div>
+    <div>
+      <span>Progress: </span><span id="meta-step">0</span> / <span id="meta-total">0</span> (<span id="meta-pct">0%</span>)
+      <div class="progress-track"><div id="meta-progress-fill" class="progress-fill"></div></div>
+    </div>
+  </div>
 
   <!-- Key Metrics Row -->
   <div class="stats-grid">
@@ -180,14 +261,14 @@
     <!-- Live Prices Column -->
     <div class="panel">
       <h2>Live Tickers (1m)</h2>
-      <div id="ticker-list">
+      <div id="ticker-list" style="max-height: 250px; overflow-y: auto;">
         <div style="color: var(--text-muted);">Waiting for market feed...</div>
       </div>
     </div>
 
     <!-- Chart Panel -->
     <div class="panel">
-      <h2>Portfolio Equity & Performance</h2>
+      <h2>Portfolio Equity Curve (<span id="chart-account-label">trader_1</span>)</h2>
       <div style="height: 250px;">
         <canvas id="equityChart"></canvas>
       </div>
@@ -199,12 +280,7 @@
       <div class="order-form">
         <div class="form-group">
           <label>Ticker</label>
-          <select id="ord-ticker">
-            <option value="AAPL">AAPL</option>
-            <option value="NVDA">NVDA</option>
-            <option value="TSLA">TSLA</option>
-            <option value="MSFT">MSFT</option>
-          </select>
+          <select id="ord-ticker"></select>
         </div>
         <div class="form-group">
           <label>Side</label>
@@ -292,11 +368,55 @@
     </div>
   </div>
 
+  <!-- Modal: Configure New Pass / Negotiate Account -->
+  <div id="new-pass-modal" class="modal-overlay">
+    <div class="modal">
+      <h3>Configure Simulation Pass</h3>
+      <div class="order-form">
+        <div class="form-group">
+          <label>Account ID / Run Tag</label>
+          <input type="text" id="setup-id" placeholder="e.g. momentum_pass_1" value="pass_1">
+        </div>
+        <div class="form-group">
+          <label>Initial Cash ($)</label>
+          <input type="number" id="setup-cash" value="100000" step="1000">
+        </div>
+        <div class="form-group">
+          <label>Max Leverage (e.g. 2.0 = 50% margin, 4.0 = 25% margin)</label>
+          <input type="number" id="setup-leverage" value="2.0" step="0.5" min="1.0">
+        </div>
+        <div class="form-group">
+          <label>Initial Positions (Optional, comma-separated e.g. AAPL:50,TSLA:-20)</label>
+          <input type="text" id="setup-positions" placeholder="AAPL:50, NVDA:20">
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+          <button onclick="closeNewPassModal()" style="background:#475569;">Cancel</button>
+          <button onclick="submitNewPass()" class="btn-primary">Create & Select</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Performance Report -->
+  <div id="perf-modal" class="modal-overlay">
+    <div class="modal" style="width: 500px;">
+      <h3>Session Performance Report (<span id="perf-modal-acc"></span>)</h3>
+      <div id="perf-modal-content" style="font-size: 13px; line-height: 1.8;">
+        Loading report...
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:16px;">
+        <button onclick="saveSessionToServer()" class="btn-success">Save Session to Server</button>
+        <button onclick="closePerfModal()" style="background:#475569;">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let ws = null;
     let equityChart = null;
     const equityData = [];
     const equityLabels = [];
+    let currentAccountId = "trader_1";
 
     function initChart() {
       const ctx = document.getElementById('equityChart').getContext('2d');
@@ -348,13 +468,20 @@
         updateClockStatus(msg.data);
       } else if (msg.type === 'MARKET_BARS') {
         updateMarketBars(msg.data);
+        fetchMetadata();
       } else if (msg.type === 'ACCOUNT_UPDATE') {
-        updateAccountUI(msg.data);
+        if (msg.data.account_id === currentAccountId) {
+          updateAccountUI(msg.data);
+        }
       } else if (msg.type === 'TRADE_EXECUTION') {
-        addTradeRow(msg.data);
-        fetchOrders();
+        if (msg.data.account_id === currentAccountId) {
+          addTradeRow(msg.data);
+          fetchOrders();
+        }
       } else if (msg.type === 'ORDER_UPDATE') {
-        fetchOrders();
+        if (msg.data.account_id === currentAccountId) {
+          fetchOrders();
+        }
       }
     }
 
@@ -414,7 +541,6 @@
         document.getElementById('stat-leverage').textContent = `${acc.margin.leverage.toFixed(2)}x / $${acc.margin.maintenance_margin_requirement.toFixed(0)}`;
       }
 
-      // Update Equity Chart
       if (equityChart) {
         equityLabels.push('');
         equityData.push(acc.equity);
@@ -425,7 +551,7 @@
         equityChart.update();
       }
 
-      // Render Positions
+      // Positions
       const posBody = document.getElementById('positions-body');
       const positions = Object.values(acc.positions || {});
       if (positions.length === 0) {
@@ -463,7 +589,7 @@
 
     async function fetchOrders() {
       try {
-        const res = await fetch('/api/v1/orders');
+        const res = await fetch(`/api/v1/orders?account_id=${currentAccountId}`);
         const orders = await res.json();
         const tbody = document.getElementById('orders-body');
         if (orders.length === 0) {
@@ -484,6 +610,65 @@
       }
     }
 
+    async function fetchTickers() {
+      try {
+        const res = await fetch('/api/v1/market/tickers');
+        const tickers = await res.json();
+        if (tickers && tickers.length > 0) {
+          const select = document.getElementById('ord-ticker');
+          select.innerHTML = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+        }
+      } catch (e) {
+        console.error('Failed to fetch tickers:', e);
+      }
+    }
+
+    async function fetchAccounts() {
+      try {
+        const res = await fetch('/api/v1/accounts');
+        const accounts = await res.json();
+        const selector = document.getElementById('account-selector');
+        selector.innerHTML = accounts.map(a => `
+          <option value="${a.account_id}" ${a.account_id === currentAccountId ? 'selected' : ''}>
+            ${a.account_id} ${a.tag ? '(' + a.tag + ')' : ''}
+          </option>
+        `).join('');
+      } catch (e) {
+        console.error('Failed to fetch accounts:', e);
+      }
+    }
+
+    function onAccountChange(accId) {
+      currentAccountId = accId;
+      document.getElementById('chart-account-label').textContent = accId;
+      equityData.length = 0;
+      equityLabels.length = 0;
+      fetchAccountDetails();
+      fetchOrders();
+    }
+
+    async function fetchAccountDetails() {
+      try {
+        const res = await fetch(`/api/v1/account?account_id=${currentAccountId}`);
+        const acc = await res.json();
+        updateAccountUI(acc);
+      } catch (e) {}
+    }
+
+    async function fetchMetadata() {
+      try {
+        const res = await fetch('/api/v1/sim/metadata');
+        const meta = await res.json();
+        if (meta.start_time && meta.end_time) {
+          document.getElementById('meta-range').textContent = `${meta.start_time.substring(0, 16).replace('T', ' ')} ~ ${meta.end_time.substring(0, 16).replace('T', ' ')}`;
+        }
+        document.getElementById('meta-step').textContent = meta.cursor || 0;
+        document.getElementById('meta-total').textContent = meta.total_bars || 0;
+        document.getElementById('meta-pct').textContent = `${meta.progress_pct}%`;
+        document.getElementById('meta-progress-fill').style.width = `${meta.progress_pct}%`;
+      } catch (e) {}
+    }
+
     function sendSimControl(action) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action } }));
@@ -495,6 +680,17 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action: 'speed', speed } }));
       }
+    }
+
+    async function resetSimulation() {
+      if (!confirm('Reset simulation playback cursor to beginning of dataset?')) return;
+      await fetch('/api/v1/sim/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      equityData.length = 0;
+      equityLabels.length = 0;
+      if (equityChart) equityChart.update();
+      fetchMetadata();
+      fetchStatus();
+      fetchAccountDetails();
     }
 
     function toggleLimitPrice(type) {
@@ -518,7 +714,7 @@
       };
 
       try {
-        const res = await fetch('/api/v1/orders', {
+        const res = await fetch(`/api/v1/orders?account_id=${currentAccountId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -535,30 +731,123 @@
     }
 
     async function cancelOrder(orderId) {
-      await fetch(`/api/v1/orders/${orderId}`, { method: 'DELETE' });
+      await fetch(`/api/v1/orders/${orderId}?account_id=${currentAccountId}`, { method: 'DELETE' });
       fetchOrders();
     }
 
-    async function fetchTickers() {
+    function openNewPassModal() {
+      document.getElementById('new-pass-modal').style.display = 'flex';
+    }
+    function closeNewPassModal() {
+      document.getElementById('new-pass-modal').style.display = 'none';
+    }
+
+    async function submitNewPass() {
+      const accId = document.getElementById('setup-id').value.trim();
+      const cash = parseFloat(document.getElementById('setup-cash').value);
+      const leverage = parseFloat(document.getElementById('setup-leverage').value);
+      const posStr = document.getElementById('setup-positions').value.trim();
+
+      const initial_positions = {};
+      if (posStr) {
+        posStr.split(',').forEach(item => {
+          const parts = item.split(':');
+          if (parts.length === 2) {
+            initial_positions[parts[0].trim().toUpperCase()] = parseFloat(parts[1].trim());
+          }
+        });
+      }
+
+      const payload = {
+        account_id: accId,
+        tag: accId,
+        initial_cash: cash,
+        leverage: leverage,
+        initial_positions: Object.keys(initial_positions).length > 0 ? initial_positions : null,
+      };
+
       try {
-        const res = await fetch('/api/v1/market/tickers');
-        const tickers = await res.json();
-        if (tickers && tickers.length > 0) {
-          const select = document.getElementById('ord-ticker');
-          select.innerHTML = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+        const res = await fetch('/api/v1/account/setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Setup error: ' + (err.detail || 'Failed'));
+        } else {
+          closeNewPassModal();
+          await fetchAccounts();
+          onAccountChange(accId);
         }
       } catch (e) {
-        console.error('Failed to fetch tickers:', e);
+        alert('Network error: ' + e);
       }
+    }
+
+    function exportTradesCSV() {
+      window.location.href = `/api/v1/reports/trades/csv?account_id=${currentAccountId}`;
+    }
+
+    async function openPerformanceModal() {
+      document.getElementById('perf-modal-acc').textContent = currentAccountId;
+      document.getElementById('perf-modal').style.display = 'flex';
+      try {
+        const res = await fetch(`/api/v1/reports/performance?account_id=${currentAccountId}`);
+        const p = await res.json();
+        document.getElementById('perf-modal-content').innerHTML = `
+          <table style="width:100%;">
+            <tr><td><strong>Initial Capital:</strong></td><td>$${p.initial_capital.toLocaleString()}</td></tr>
+            <tr><td><strong>Final Equity:</strong></td><td>$${p.final_equity.toLocaleString()}</td></tr>
+            <tr><td><strong>Total PnL:</strong></td><td class="${p.total_pnl >= 0 ? 'positive' : 'negative'}"><strong>$${p.total_pnl.toFixed(2)} (${p.total_return_pct}%)</strong></td></tr>
+            <tr><td><strong>Sharpe Ratio (Annualized):</strong></td><td><strong>${p.sharpe_ratio}</strong></td></tr>
+            <tr><td><strong>Sortino Ratio:</strong></td><td>${p.sortino_ratio}</td></tr>
+            <tr><td><strong>Max Drawdown:</strong></td><td>$${p.max_drawdown_usd.toFixed(2)} (${p.max_drawdown_pct}%)</td></tr>
+            <tr><td><strong>Total Trades:</strong></td><td>${p.total_trades}</td></tr>
+            <tr><td><strong>Snapshots Recorded:</strong></td><td>${p.total_snapshots}</td></tr>
+          </table>
+        `;
+      } catch (e) {
+        document.getElementById('perf-modal-content').textContent = 'Error loading report: ' + e;
+      }
+    }
+    function closePerfModal() {
+      document.getElementById('perf-modal').style.display = 'none';
+    }
+
+    async function saveSessionToServer() {
+      try {
+        const res = await fetch('/api/v1/reports/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: currentAccountId, output_dir: 'reports' })
+        });
+        const data = await res.json();
+        alert('Session saved to server!\nFiles:\n' + Object.values(data.files).join('\n'));
+      } catch (e) {
+        alert('Error saving session: ' + e);
+      }
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/v1/sim/status');
+        const data = await res.json();
+        updateClockStatus(data);
+      } catch (e) {}
     }
 
     window.onload = () => {
       initChart();
       connectWS();
       fetchTickers();
+      fetchAccounts();
+      fetchMetadata();
+      fetchAccountDetails();
       fetchOrders();
       fetchStatus();
       setInterval(fetchOrders, 4000);
+      setInterval(fetchMetadata, 5000);
     };
   </script>
 </body>

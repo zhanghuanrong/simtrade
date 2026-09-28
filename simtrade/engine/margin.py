@@ -37,14 +37,20 @@ class MarginEngine:
         account.equity = equity
         account.borrowed_margin = max(0.0, -account.cash)
 
+        cfg = account.custom_margin_config or {}
+        init_rate = cfg.get("initial_margin_rate", self.config.initial_margin_rate)
+        maint_rate = cfg.get("maintenance_margin_rate", self.config.maintenance_margin_rate)
+        short_init_rate = cfg.get("short_initial_margin_rate", self.config.short_initial_margin_rate)
+        short_maint_rate = cfg.get("short_maintenance_margin_rate", self.config.short_maintenance_margin_rate)
+
         # Calculate initial margin requirements:
-        init_req_long = total_long_value * self.config.initial_margin_rate
-        init_req_short = total_short_value * self.config.short_initial_margin_rate
+        init_req_long = total_long_value * init_rate
+        init_req_short = total_short_value * short_init_rate
         total_init_req = round(init_req_long + init_req_short, 4)
 
         # Calculate maintenance margin requirements:
-        maint_req_long = total_long_value * self.config.maintenance_margin_rate
-        maint_req_short = total_short_value * self.config.short_maintenance_margin_rate
+        maint_req_long = total_long_value * maint_rate
+        maint_req_short = total_short_value * short_maint_rate
         total_maint_req = round(maint_req_long + maint_req_short, 4)
 
         # Margin excess (headroom above maintenance margin):
@@ -54,7 +60,7 @@ class MarginEngine:
         # Uncommitted equity available for new positions = max(0, equity - total_init_req)
         # Buying power = uncommitted equity / initial_margin_rate
         uncommitted_equity = max(0.0, equity - total_init_req)
-        buying_power = round(uncommitted_equity / self.config.initial_margin_rate, 4)
+        buying_power = round(uncommitted_equity / init_rate, 4)
 
         # Current leverage
         leverage = round(gross_market_value / max(equity, 1.0), 2) if gross_market_value > 0 else 0.0

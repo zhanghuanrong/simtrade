@@ -178,7 +178,12 @@ class SimTradeClient:
         async with self._session.get(f"{self.base_url}/api/v1/reports/performance?account_id={self.account_id}") as resp:
             return await resp.json()
 
-    # Simulation Controls
+    # Simulation Controls & Metadata
+    async def get_metadata(self) -> Dict[str, Any]:
+        """Fetch simulation metadata (time range, total bars, available tickers, progress)."""
+        async with self._session.get(f"{self.base_url}/api/v1/sim/metadata") as resp:
+            return await resp.json()
+
     async def start_sim(self):
         async with self._session.post(f"{self.base_url}/api/v1/sim/start") as resp:
             return await resp.json()
@@ -191,6 +196,66 @@ class SimTradeClient:
         async with self._session.post(f"{self.base_url}/api/v1/sim/step") as resp:
             return await resp.json()
 
+    async def reset_sim(self, start_time: Optional[str] = None) -> Dict[str, Any]:
+        """Reset simulation playback cursor to start a fresh simulation pass."""
+        payload = {"start_time": start_time} if start_time else {}
+        async with self._session.post(f"{self.base_url}/api/v1/sim/reset", json=payload) as resp:
+            return await resp.json()
+
     async def set_speed(self, speed: float):
         async with self._session.post(f"{self.base_url}/api/v1/sim/speed", json={"speed_multiplier": speed}) as resp:
+            return await resp.json()
+
+    # Account Configuration & Pass Tagging
+    async def setup_account(
+        self,
+        account_id: Optional[str] = None,
+        tag: Optional[str] = None,
+        initial_cash: float = 100_000.0,
+        initial_positions: Optional[Dict[str, float]] = None,
+        initial_entry_prices: Optional[Dict[str, float]] = None,
+        leverage: Optional[float] = None,
+        initial_margin_rate: Optional[float] = None,
+        maintenance_margin_rate: Optional[float] = None,
+    ) -> Account:
+        """Negotiate / configure initial account terms, positions, and margin policy for this run pass."""
+        acc_id = account_id or self.account_id
+        payload = {
+            "account_id": acc_id,
+            "tag": tag or acc_id,
+            "initial_cash": initial_cash,
+            "initial_positions": initial_positions,
+            "initial_entry_prices": initial_entry_prices,
+            "leverage": leverage,
+            "initial_margin_rate": initial_margin_rate,
+            "maintenance_margin_rate": maintenance_margin_rate,
+        }
+        async with self._session.post(f"{self.base_url}/api/v1/account/setup", json=payload) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise ValueError(f"Account setup failed: {data.get('detail')}")
+            self.account_id = acc_id
+            return Account(**data)
+
+    async def list_accounts(self) -> List[Dict[str, Any]]:
+        """List all registered simulation pass accounts."""
+        async with self._session.get(f"{self.base_url}/api/v1/accounts") as resp:
+            return await resp.json()
+
+    # Session Export & Persistence
+    async def export_trades_csv(self, account_id: Optional[str] = None, save_path: Optional[str] = None) -> str:
+        """Export trades as CSV string or save directly to a local file."""
+        acc_id = account_id or self.account_id
+        async with self._session.get(f"{self.base_url}/api/v1/reports/trades/csv?account_id={acc_id}") as resp:
+            content = await resp.text()
+            if save_path:
+                with open(save_path, "w") as f:
+                    f.write(content)
+            return content
+
+    async def save_session(self, account_id: Optional[str] = None, output_dir: str = "reports") -> Dict[str, Any]:
+        """Trigger server to save trades, ledger, and performance reports to disk."""
+        acc_id = account_id or self.account_id
+        payload = {"account_id": acc_id, "output_dir": output_dir}
+        async with self._session.post(f"{self.base_url}/api/v1/reports/save", json=payload) as resp:
             return await resp.json()

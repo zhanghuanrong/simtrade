@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import logging
 
 from simtrade.engine.margin import MarginEngine
-from simtrade.models.account import Account, Position
+from simtrade.models.account import Account, Position, AccountSetupRequest, AccountSummary
 from simtrade.models.market_data import Bar
 from simtrade.models.order import Order, OrderSide, OrderStatus, OrderType
 from simtrade.models.trade import Trade
@@ -36,6 +36,69 @@ class AccountManager:
             self.margin_engine.update_account_margin(acc)
             self.accounts[account_id] = acc
         return self.accounts[account_id]
+
+    def setup_account(self, req: AccountSetupRequest, mark_prices: Optional[Dict[str, float]] = None) -> Account:
+        """Configure or re-initialize account settings, cash, initial positions, and margin terms."""
+        mark_prices = mark_prices or {}
+        custom_cfg = {}
+        if req.leverage:
+            custom_cfg["max_leverage"] = req.leverage
+            custom_cfg["initial_margin_rate"] = 1.0 / req.leverage
+        if req.initial_margin_rate:
+            custom_cfg["initial_margin_rate"] = req.initial_margin_rate
+        if req.maintenance_margin_rate:
+            custom_cfg["maintenance_margin_rate"] = req.maintenance_margin_rate
+
+        acc = Account(
+            account_id=req.account_id,
+            tag=req.tag,
+            cash=req.initial_cash,
+            initial_capital=req.initial_cash,
+            custom_margin_config=custom_cfg if custom_cfg else None,
+        )
+
+        # Set up initial positions if specified
+        if req.initial_positions:
+            for ticker, qty in req.initial_positions.items():
+                if qty == 0:
+                    continue
+                mark_p = mark_prices.get(ticker, 100.0)
+                entry_p = (req.initial_entry_prices or {}).get(ticker, mark_p)
+                pos = Position(
+                    ticker=ticker,
+                    quantity=qty,
+                    avg_entry_price=entry_p,
+                    current_price=mark_p,
+                )
+                if qty > 0:
+                    pos.unrealized_pnl = round(qty * (mark_p - entry_p), 4)
+                else:
+                    pos.unrealized_pnl = round(abs(qty) * (entry_p - mark_p), 4)
+                acc.positions[ticker] = pos
+
+        self.update_account_valuation(acc)
+        self.accounts[req.account_id] = acc
+        logger.info(f"Account {req.account_id} configured. Cash=${acc.cash:.2f}, Equity=${acc.equity:.2f}, Positions={len(acc.positions)}")
+        return acc
+
+    def list_accounts(self) -> List[AccountSummary]:
+        """List summaries of all active/configured simulation accounts."""
+        summaries = []
+        for a in self.accounts.values():
+            summaries.append(AccountSummary(
+                account_id=a.account_id,
+                tag=a.tag,
+                initial_capital=a.initial_capital,
+                equity=a.equity,
+                cash=a.cash,
+                realized_pnl=a.realized_pnl,
+                unrealized_pnl=a.unrealized_pnl,
+                buying_power=a.margin.buying_power,
+                margin_used=a.margin.initial_margin_requirement,
+                positions_count=len(a.positions),
+                created_at=a.created_at,
+            ))
+        return summaries
 
     def reserve_for_order(self, account_id: str, order: Order, estimated_price: float) -> Tuple[bool, Optional[str]]:
         """Validate margin and reserve required buying power/cash for pending orders."""
