@@ -36,7 +36,8 @@ class SimulationConfig(BaseModel):
     """Simulation clock and market data replay configuration."""
     speed_multiplier: float = Field(default=1.0, ge=0.0, description="Playback speed (1.0 = real-time 1m/min, 60.0 = 1m/sec, 0 = max/instant)")
     tickers: List[str] = Field(default_factory=lambda: ["AAPL", "NVDA", "TSLA", "MSFT"], description="List of active tickers")
-    data_dir: Optional[str] = Field(default=None, description="Directory containing historical CSV/Parquet 1m data files")
+    data_file: Optional[str] = Field(default=None, description="Path to historical parquet or CSV file")
+    data_dir: Optional[str] = Field(default="data", description="Directory containing historical CSV/Parquet 1m data files")
     start_time: Optional[str] = Field(default=None, description="Simulation start datetime ISO string")
     end_time: Optional[str] = Field(default=None, description="Simulation end datetime ISO string")
     generate_synthetic_if_missing: bool = Field(default=True, description="Generate synthetic 1m OHLCV data if no data files found")

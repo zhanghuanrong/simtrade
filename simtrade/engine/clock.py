@@ -16,8 +16,15 @@ class SimClock:
         start_time: Optional[datetime] = None,
         speed_multiplier: float = 1.0,
         interval_seconds: int = 60,
+        timeline: Optional[List[datetime]] = None,
     ):
-        self.current_time: datetime = start_time or datetime(2026, 1, 5, 9, 30, 0)
+        self.timeline = timeline or []
+        self.cursor = 0
+        if self.timeline:
+            self.current_time = self.timeline[0]
+            self.cursor = 1
+        else:
+            self.current_time: datetime = start_time or datetime(2026, 1, 5, 9, 30, 0)
         self.interval = timedelta(seconds=interval_seconds)
         self.speed_multiplier = speed_multiplier  # 1.0 = real-time, 60.0 = 1 sec per min, 0 = instant
         self.is_running: bool = False
@@ -42,8 +49,12 @@ class SimClock:
         logger.info("Simulation clock resumed")
 
     def step(self) -> datetime:
-        """Advance the simulation time by one interval (e.g. 1 minute)."""
-        self.current_time += self.interval
+        """Advance the simulation time by one interval or the next timeline bar."""
+        if self.timeline and self.cursor < len(self.timeline):
+            self.current_time = self.timeline[self.cursor]
+            self.cursor += 1
+        else:
+            self.current_time += self.interval
         self.step_count += 1
         for listener in self._listeners:
             try:

@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 import logging
 
@@ -33,12 +34,27 @@ class Simulator:
         self.matching_config = matching_config or MatchingConfig()
         self.margin_config = margin_config or MarginConfig()
 
-        # Engine subcomponents
-        self.clock = SimClock(speed_multiplier=self.sim_config.speed_multiplier)
+        # Auto-detect default parquet if present
+        data_file_to_use = self.sim_config.data_file
+        if not data_file_to_use:
+            default_p = Path("data/1m_20260817_now.parquet")
+            if default_p.exists():
+                data_file_to_use = str(default_p)
+
+        # Initialize data feeder first
         self.feeder = DataFeeder(
             tickers=self.sim_config.tickers,
+            data_file=data_file_to_use,
             data_dir=self.sim_config.data_dir,
             generate_synthetic=self.sim_config.generate_synthetic_if_missing,
+        )
+        self.sim_config.tickers = self.feeder.tickers
+
+        # Engine subcomponents
+        self.clock = SimClock(
+            start_time=self.feeder.start_time,
+            speed_multiplier=self.sim_config.speed_multiplier,
+            timeline=self.feeder.timeline,
         )
         self.matcher = MatchingEngine(config=self.matching_config)
         self.margin_engine = MarginEngine(config=self.margin_config)

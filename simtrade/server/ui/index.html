@@ -539,17 +539,23 @@
       fetchOrders();
     }
 
-    async function fetchStatus() {
+    async function fetchTickers() {
       try {
-        const res = await fetch('/api/v1/sim/status');
-        const data = await res.json();
-        updateClockStatus(data);
-      } catch (e) {}
+        const res = await fetch('/api/v1/market/tickers');
+        const tickers = await res.json();
+        if (tickers && tickers.length > 0) {
+          const select = document.getElementById('ord-ticker');
+          select.innerHTML = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
+        }
+      } catch (e) {
+        console.error('Failed to fetch tickers:', e);
+      }
     }
 
     window.onload = () => {
       initChart();
       connectWS();
+      fetchTickers();
       fetchOrders();
       fetchStatus();
       setInterval(fetchOrders, 4000);

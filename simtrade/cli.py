@@ -23,8 +23,9 @@ def serve(
     host: str = typer.Option("0.0.0.0", help="Host interface to bind"),
     port: int = typer.Option(8000, help="Port to listen on"),
     speed: float = typer.Option(10.0, help="Simulation playback speed multiplier (1=realtime, 60=1s/min, 0=max)"),
-    tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers"),
-    data_dir: Optional[str] = typer.Option(None, help="Directory containing historical CSV data"),
+    tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers (or 'ALL')"),
+    data_file: Optional[str] = typer.Option(None, help="Path to historical parquet or CSV file (defaults to data/1m_20260817_now.parquet if exists)"),
+    data_dir: Optional[str] = typer.Option("data", help="Directory containing historical Parquet/CSV data"),
     leverage: float = typer.Option(2.0, help="Max leverage allowed"),
     maint_margin: float = typer.Option(0.25, help="Maintenance margin rate (e.g. 0.25 for 25%)"),
 ):
@@ -32,7 +33,12 @@ def serve(
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
 
     server_cfg = ServerConfig(host=host, port=port)
-    sim_cfg = SimulationConfig(speed_multiplier=speed, tickers=ticker_list, data_dir=data_dir)
+    sim_cfg = SimulationConfig(
+        speed_multiplier=speed,
+        tickers=ticker_list,
+        data_file=data_file,
+        data_dir=data_dir,
+    )
     margin_cfg = MarginConfig(max_leverage=leverage, maintenance_margin_rate=maint_margin)
     matching_cfg = MatchingConfig()
 
