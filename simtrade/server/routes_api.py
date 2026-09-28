@@ -142,6 +142,28 @@ async def step_simulation():
     return {"status": "stepped", **result}
 
 
+class StepUntilPayload(BaseModel):
+    target_time: str
+    account_id: str = "trader_1"
+
+
+@api_router.post("/sim/step_until", tags=["Simulation Control"])
+async def step_until_target(payload: StepUntilPayload):
+    """
+    Advance simulation from last T_anchor to target_time.
+    If target_time <= current_time, request is ignored.
+    If liquidation triggered mid-way, stops early and returns liquidation status and updated timestamp.
+    If target_time is in a non-trading gap, returns empty bars with success status.
+    """
+    from datetime import datetime
+    sim = get_simulator()
+    try:
+        target_dt = datetime.fromisoformat(payload.target_time)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid ISO datetime format: {e}")
+    return await sim.step_until(target_dt, account_id=payload.account_id)
+
+
 @api_router.post("/sim/speed", tags=["Simulation Control"])
 def set_simulation_speed(payload: SpeedPayload):
     """Change playback speed multiplier (e.g. 1.0=realtime, 60.0=1s/min, 0=instant)."""

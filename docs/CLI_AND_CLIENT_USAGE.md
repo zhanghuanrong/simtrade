@@ -219,7 +219,60 @@ step_data = await client.step_sim()
 print("Stepped to:", step_data["timestamp"])
 ```
 
-### 4. Change Playback Speed on-the-Fly
+### 4. Accelerate Simulation Forward: Step Until Target Timestamp (`step_until`)
+The server strictly drives simulation time forward with a baseline ratio of 1.0 (realtime). A client can also accelerate time forward to any target timestamp:
+
+```bash
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/step_until" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "target_time": "2026-08-17T14:30:00",
+       "account_id": "trader_1"
+     }'
+```
+Or via Python SDK:
+```python
+res = await client.step_until("2026-08-17T14:30:00")
+print(res["status"], res["current_time"], res["bars_processed"])
+```
+
+Or over unified WebSocket:
+```json
+{
+  "type": "STEP_UNTIL",
+  "data": {
+    "target_time": "2026-08-17T14:30:00",
+    "account_id": "trader_1"
+  }
+}
+```
+
+#### `step_until` Rules & Behaviors:
+1. **$T_{anchor}$ Progression**: The server maintains $T_{anchor}$, the timestamp up to which historical bar data has been published. `step_until` processes all intermediate bars between $T_{anchor}$ and `target_time`.
+2. **Pure Client Request & Past Ignored**: If `target_time <= current_time`, the server ignores the request without rolling backward:
+   ```json
+   {
+     "status": "ignored",
+     "reason": "target_time is less than or equal to current T_anchor",
+     "current_time": "2026-08-17T14:30:00",
+     "bars_processed": 0
+   }
+   ```
+3. **Non-Trading Gaps (Overnight/Weekend)**: The server does not invent or guess non-trading gap data. If the client requests stepping into a gap, the server fast-forwards the clock to `target_time` and replies with empty bars (`bars: {}`) and status `"TARGET_REACHED"`.
+4. **Intermediate Lifecycle Execution**: All limit/stop orders, mark prices, financing fees, and performance snapshots are processed sequentially along each 1-minute step.
+5. **Margin Liquidation Early Halt**: If an account incurs a margin call (`equity < maintenance_margin_requirement`), `step_until` immediately halts execution at that exact bar, returning:
+   ```json
+   {
+     "status": "LIQUIDATION_TRIGGERED",
+     "current_time": "2026-08-17T13:45:00",
+     "account_id": "trader_1",
+     "deficit": 1250.0,
+     "bars_processed": 14
+   }
+   ```
+   The client receives this feedback with the updated timestamp. Once handled, the client can issue subsequent `step_until` commands from that updated position.
+
+### 5. Change Playback Speed on-the-Fly
 ```bash
 curl -X POST "http://127.0.0.1:6688/api/v1/sim/speed" \
      -H "Content-Type: application/json" \

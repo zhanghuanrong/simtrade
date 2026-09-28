@@ -220,6 +220,99 @@ class Simulator:
             "equity": default_acc.equity,
         }
 
+    async def step_until(self, target_time: datetime, account_id: str = "trader_1") -> Dict[str, Any]:
+        """
+        Advance simulation from current T_anchor to target_time.
+        - If target_time <= current_time: ignored, returns current state.
+        - Sequentially processes all intermediate bars up to target_time.
+        - If target_time falls into a non-trading gap, advances to target_time and returns empty bars with success status.
+        - If margin liquidation is triggered, halts immediately at the liquidation timestamp, notifies client, and returns updated timestamp.
+        """
+        from simtrade.engine.feeder import normalize_ts
+        target_ts = normalize_ts(target_time)
+        current_ts = normalize_ts(self.clock.current_time)
+
+        # 1. Pure client request check: ignore if target is in the past or now
+        if target_ts <= current_ts:
+            return {
+                "status": "ignored",
+                "reason": "target_time is less than or equal to current T_anchor",
+                "current_time": self.clock.current_time.isoformat(),
+                "bars_processed": 0,
+                "trades": [],
+                "bars": {},
+            }
+
+        # 2. Find timeline bars strictly between current_ts and target_ts
+        bars_to_step: List[datetime] = []
+        if self.feeder.timeline:
+            for t in self.feeder.timeline:
+                norm_t = normalize_ts(t)
+                if current_ts < norm_t <= target_ts:
+                    bars_to_step.append(t)
+                elif norm_t > target_ts:
+                    break
+
+        all_new_trades: List[Dict[str, Any]] = []
+        total_bars_processed = 0
+        last_bars_payload: Dict[str, Any] = {}
+
+        # 3. Process each historical bar in range
+        for _ in bars_to_step:
+            step_result = await self.step()
+            total_bars_processed += 1
+            last_bars_payload = step_result.get("bars", {})
+
+            # Collect trades
+            trade_cnt = step_result.get("trades_count", 0)
+            if trade_cnt > 0:
+                for t in self.all_trades[-trade_cnt:]:
+                    all_new_trades.append(t.model_dump(mode="json"))
+
+            # Check if margin liquidation occurred during this bar
+            acc = self.account_mgr.get_or_create_account(account_id)
+            if acc.margin.is_margin_call:
+                liq_info = {
+                    "status": "LIQUIDATION_TRIGGERED",
+                    "message": f"Account {account_id} equity (${acc.equity:.2f}) dropped below maintenance margin (${acc.margin.maintenance_margin_requirement:.2f})",
+                    "current_time": self.clock.current_time.isoformat(),
+                    "account_id": account_id,
+                    "deficit": acc.margin.margin_call_amount,
+                    "bars_processed": total_bars_processed,
+                    "trades": all_new_trades,
+                    "bars": last_bars_payload,
+                }
+                logger.warning(f"step_until halted at {self.clock.current_time} due to liquidation on account {account_id}")
+                return liq_info
+
+        # 4. Handle non-trading gap (if target_ts is beyond the last processed bar)
+        if normalize_ts(self.clock.current_time) < target_ts:
+            self.clock.current_time = target_ts
+            if self.feeder.timeline:
+                for idx, t in enumerate(self.feeder.timeline):
+                    if normalize_ts(t) > target_ts:
+                        self.clock.cursor = idx
+                        break
+                else:
+                    self.clock.cursor = len(self.feeder.timeline)
+
+            last_bars_payload = {}
+            await self._broadcast("MARKET_BARS", {
+                "timestamp": self.clock.current_time.isoformat(),
+                "bars": {},
+                "is_gap": True,
+            })
+            default_acc = self.account_mgr.get_or_create_account(account_id)
+            await self._broadcast("ACCOUNT_UPDATE", default_acc.model_dump(mode="json"))
+
+        return {
+            "status": "TARGET_REACHED",
+            "current_time": self.clock.current_time.isoformat(),
+            "bars_processed": total_bars_processed,
+            "trades": all_new_trades,
+            "bars": last_bars_payload,
+        }
+
     async def _run_loop(self):
         """Asynchronous playback loop respecting speed multiplier."""
         logger.info("Simulation playback loop started")

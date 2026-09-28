@@ -103,6 +103,18 @@ async def websocket_unified_endpoint(websocket: WebSocket):
                     elif action == "speed":
                         sim.clock.set_speed(data.get("speed", 1.0))
 
+                elif msg_type == "STEP_UNTIL":
+                    account_id = data.get("account_id", "trader_1")
+                    target_time_str = data.get("target_time")
+                    if target_time_str:
+                        from datetime import datetime
+                        target_dt = datetime.fromisoformat(target_time_str)
+                        res = await sim.step_until(target_dt, account_id=account_id)
+                        await websocket.send_json({
+                            "type": "STEP_UNTIL_RESULT",
+                            "data": res,
+                        })
+
                 elif msg_type == "PING":
                     await websocket.send_json({"type": "PONG", "data": {}})
 

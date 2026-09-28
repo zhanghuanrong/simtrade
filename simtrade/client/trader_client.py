@@ -1,8 +1,9 @@
 """SimTrade Python Client SDK for paper traders, bots, and quantitative researchers."""
 
 import asyncio
+from datetime import datetime
 import json
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Union
 import aiohttp
 import logging
 
@@ -195,6 +196,22 @@ class SimTradeClient:
     async def step_sim(self) -> Dict[str, Any]:
         async with self._session.post(f"{self.base_url}/api/v1/sim/step") as resp:
             return await resp.json()
+
+    async def step_until(self, target_time: Union[str, datetime], account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Advance simulation forward to target_time from current T_anchor.
+        - If target_time <= current_time, server ignores request.
+        - If liquidation triggers mid-way, server stops early and returns liquidation status.
+        - If target_time is in a non-trading gap, returns empty bars with success status.
+        """
+        acc_id = account_id or self.account_id
+        iso_str = target_time.isoformat() if isinstance(target_time, datetime) else str(target_time)
+        payload = {"target_time": iso_str, "account_id": acc_id}
+        async with self._session.post(f"{self.base_url}/api/v1/sim/step_until", json=payload) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise ValueError(f"Step until failed: {data.get('detail')}")
+            return data
 
     async def reset_sim(self, start_time: Optional[str] = None) -> Dict[str, Any]:
         """Reset simulation playback cursor to start a fresh simulation pass."""

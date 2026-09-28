@@ -88,3 +88,100 @@ def test_simulation_reset_and_export(client):
     assert reset_resp.status_code == 200
     meta = client.get("/api/v1/sim/metadata").json()
     assert meta["cursor"] == 0
+
+
+def test_step_until_flow(client):
+    from datetime import datetime, timedelta
+
+    meta = client.get("/api/v1/sim/metadata").json()
+    current_dt = datetime.fromisoformat(meta["current_time"])
+
+    # 1. Step until +5 minutes into the future from current T_anchor
+    target_dt_1 = current_dt + timedelta(minutes=5)
+    resp = client.post("/api/v1/sim/step_until", json={
+        "target_time": target_dt_1.isoformat(),
+        "account_id": "trader_1",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "TARGET_REACHED"
+    assert data["bars_processed"] == 5
+    assert data["current_time"] == target_dt_1.isoformat()
+    assert len(data["bars"]) > 0
+
+    # 2. Ignored when target_time is in the past or current anchor
+    past_dt = current_dt - timedelta(minutes=1)
+    resp_past = client.post("/api/v1/sim/step_until", json={
+        "target_time": past_dt.isoformat(),
+        "account_id": "trader_1",
+    })
+    assert resp_past.status_code == 200
+    data_past = resp_past.json()
+    assert data_past["status"] == "ignored"
+    assert data_past["bars_processed"] == 0
+    assert "target_time is less than or equal" in data_past["reason"]
+
+    # Same time as current T_anchor
+    resp_same = client.post("/api/v1/sim/step_until", json={
+        "target_time": target_dt_1.isoformat(),
+        "account_id": "trader_1",
+    })
+    assert resp_same.status_code == 200
+    assert resp_same.json()["status"] == "ignored"
+
+    # 3. Non-trading gap handling: step into non-trading hours
+    # Market closes at 20:00 UTC. If we step until 22:00 UTC of same day:
+    target_gap = datetime(current_dt.year, current_dt.month, current_dt.day, 22, 0, 0)
+    resp_gap = client.post("/api/v1/sim/step_until", json={
+        "target_time": target_gap.isoformat(),
+        "account_id": "trader_1",
+    })
+    assert resp_gap.status_code == 200
+    data_gap = resp_gap.json()
+    assert data_gap["status"] == "TARGET_REACHED"
+    assert data_gap["current_time"] == target_gap.isoformat()
+    assert data_gap["bars"] == {}  # Empty bars for non-trading gap
+
+
+def test_step_until_liquidation_halt(client):
+    from datetime import datetime, timedelta
+
+    client.post("/api/v1/sim/reset", json={})
+    meta = client.get("/api/v1/sim/metadata").json()
+    current_dt = datetime.fromisoformat(meta["current_time"])
+
+    # Setup an account with underwater short position that triggers margin call
+    setup_resp = client.post("/api/v1/account/setup", json={
+        "account_id": "margin_risk_trader",
+        "tag": "risk_pass",
+        "initial_cash": 1000.0,
+        "initial_positions": {"AAPL": -50.0},
+        "initial_entry_prices": {"AAPL": 100.0},
+    })
+    assert setup_resp.status_code == 200
+
+    # Request step_until +10 minutes
+    target_dt = current_dt + timedelta(minutes=10)
+    resp = client.post("/api/v1/sim/step_until", json={
+        "target_time": target_dt.isoformat(),
+        "account_id": "margin_risk_trader",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "LIQUIDATION_TRIGGERED"
+    assert data["account_id"] == "margin_risk_trader"
+    assert data["deficit"] > 0
+    # Verified it halted early on the first bar (not completing all 10 bars)
+    assert data["bars_processed"] == 1
+    # Updated current_time is at the halt timestamp
+    halt_time = datetime.fromisoformat(data["current_time"])
+    assert halt_time < target_dt
+
+    # The client handles the feedback and can issue a subsequent step_until
+    subsequent_target = halt_time + timedelta(minutes=2)
+    subsequent_resp = client.post("/api/v1/sim/step_until", json={
+        "target_time": subsequent_target.isoformat(),
+        "account_id": "margin_risk_trader",
+    })
+    assert subsequent_resp.status_code == 200
+

@@ -81,4 +81,13 @@ async def test_client_sdk_workflow(running_server):
     perf = await client.get_performance()
     assert perf["total_trades"] >= 1
 
+    # 6. Test step_until SDK method
+    meta = await client.get_metadata()
+    from datetime import datetime, timedelta
+    current_dt = datetime.fromisoformat(meta["current_time"])
+    target_dt = current_dt + timedelta(minutes=3)
+    step_until_res = await client.step_until(target_dt)
+    assert step_until_res["status"] == "TARGET_REACHED"
+    assert step_until_res["bars_processed"] == 3
+
     await client.close()
