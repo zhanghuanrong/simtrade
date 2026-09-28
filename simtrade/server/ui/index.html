@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SimTrade | Paper Trading Server</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #334155;
+      --border: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-blue: #38bdf8;
+      --accent-amber: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      padding: 16px;
+      min-height: 100vh;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+      padding: 14px 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent-blue); }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-running { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+    .badge-paused { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+    .controls { display: flex; align-items: center; gap: 10px; }
+    button {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    button:hover { background: #475569; }
+    button.btn-primary { background: #0284c7; border-color: #38bdf8; }
+    button.btn-primary:hover { background: #0369a1; }
+    button.btn-success { background: #059669; border-color: #10b981; }
+    button.btn-danger { background: #dc2626; border-color: #ef4444; }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .stat-val { font-size: 20px; font-weight: 700; }
+    .positive { color: var(--accent-green); }
+    .negative { color: var(--accent-red); }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 1200px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .panel h2 { font-size: 15px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .ticker-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .ticker-symbol { font-weight: 700; font-size: 15px; }
+    .ticker-price { font-weight: 600; font-size: 15px; }
+
+    .order-form { display: flex; flex-direction: column; gap: 10px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .form-group input, .form-group select {
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: 10px; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+    .table-panel { max-height: 280px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <h1>SimTrade Server</h1>
+      <span id="sim-status-badge" class="badge badge-paused">PAUSED</span>
+      <span id="sim-clock" style="font-size: 14px; color: var(--accent-blue); font-family: monospace;">2026-01-05 09:30:00</span>
+    </div>
+    <div class="controls">
+      <button onclick="sendSimControl('start')" class="btn-success">Play</button>
+      <button onclick="sendSimControl('pause')" class="btn-danger">Pause</button>
+      <button onclick="sendSimControl('step')" class="btn-primary">Step 1m</button>
+      <span style="font-size: 12px; color: var(--text-muted); margin-left: 10px;">Speed:</span>
+      <button onclick="setSpeed(1)">1x</button>
+      <button onclick="setSpeed(10)">10x</button>
+      <button onclick="setSpeed(60)">60x</button>
+      <button onclick="setSpeed(0)">MAX</button>
+      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API Docs</button></a>
+    </div>
+  </header>
+
+  <!-- Key Metrics Row -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Equity</div>
+      <div id="stat-equity" class="stat-val">$100,000.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Cash Balance</div>
+      <div id="stat-cash" class="stat-val">$100,000.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Unrealized PnL</div>
+      <div id="stat-unrealized" class="stat-val">$0.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Realized PnL</div>
+      <div id="stat-realized" class="stat-val">$0.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Buying Power</div>
+      <div id="stat-bp" class="stat-val">$200,000.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Leverage / Maint Req</div>
+      <div id="stat-leverage" class="stat-val">1.0x / $0.00</div>
+    </div>
+  </div>
+
+  <!-- Main Trading Area -->
+  <div class="main-grid">
+    <!-- Live Prices Column -->
+    <div class="panel">
+      <h2>Live Tickers (1m)</h2>
+      <div id="ticker-list">
+        <div style="color: var(--text-muted);">Waiting for market feed...</div>
+      </div>
+    </div>
+
+    <!-- Chart Panel -->
+    <div class="panel">
+      <h2>Portfolio Equity & Performance</h2>
+      <div style="height: 250px;">
+        <canvas id="equityChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Order Entry Panel -->
+    <div class="panel">
+      <h2>Quick Order Entry</h2>
+      <div class="order-form">
+        <div class="form-group">
+          <label>Ticker</label>
+          <select id="ord-ticker">
+            <option value="AAPL">AAPL</option>
+            <option value="NVDA">NVDA</option>
+            <option value="TSLA">TSLA</option>
+            <option value="MSFT">MSFT</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Side</label>
+          <select id="ord-side">
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+            <option value="SELL_SHORT">SELL SHORT</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Order Type</label>
+          <select id="ord-type" onchange="toggleLimitPrice(this.value)">
+            <option value="MARKET">MARKET</option>
+            <option value="LIMIT">LIMIT</option>
+            <option value="STOP">STOP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Shares</label>
+          <input type="number" id="ord-qty" value="10" min="1" step="1">
+        </div>
+        <div class="form-group" id="group-limit" style="display:none;">
+          <label>Price</label>
+          <input type="number" id="ord-price" placeholder="Limit / Stop Price" step="0.01">
+        </div>
+        <button onclick="submitOrder()" class="btn-primary" style="margin-top: 8px;">Submit Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tables: Positions, Active Orders, Trade Tape -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+    <div class="panel table-panel">
+      <h2>Open Positions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Qty</th>
+            <th>Entry</th>
+            <th>Mark</th>
+            <th>PnL</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body">
+          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel table-panel">
+      <h2>Active Orders</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Side</th>
+            <th>Qty</th>
+            <th>Type</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="orders-body">
+          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No active orders</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel table-panel">
+      <h2>Execution Tape</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Side</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>Comm</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No executions yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let equityChart = null;
+    const equityData = [];
+    const equityLabels = [];
+
+    function initChart() {
+      const ctx = document.getElementById('equityChart').getContext('2d');
+      equityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: equityLabels,
+          datasets: [{
+            label: 'Portfolio Equity ($)',
+            data: equityData,
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+            fill: true,
+            tension: 0.2,
+            borderWidth: 2,
+            pointRadius: 1,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+          }
+        }
+      });
+    }
+
+    function connectWS() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${location.host}/ws/unified`;
+      ws = new WebSocket(url);
+
+      ws.onopen = () => console.log('Connected to SimTrade WS');
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+      };
+      ws.onclose = () => {
+        console.warn('SimTrade WS disconnected. Reconnecting in 2s...');
+        setTimeout(connectWS, 2000);
+      };
+    }
+
+    function handleMessage(msg) {
+      if (msg.type === 'SIM_STATUS') {
+        updateClockStatus(msg.data);
+      } else if (msg.type === 'MARKET_BARS') {
+        updateMarketBars(msg.data);
+      } else if (msg.type === 'ACCOUNT_UPDATE') {
+        updateAccountUI(msg.data);
+      } else if (msg.type === 'TRADE_EXECUTION') {
+        addTradeRow(msg.data);
+        fetchOrders();
+      } else if (msg.type === 'ORDER_UPDATE') {
+        fetchOrders();
+      }
+    }
+
+    function updateClockStatus(data) {
+      if (data.current_time) {
+        document.getElementById('sim-clock').textContent = data.current_time.replace('T', ' ').substring(0, 19);
+      }
+      const badge = document.getElementById('sim-status-badge');
+      if (data.is_running && !data.is_paused) {
+        badge.className = 'badge badge-running';
+        badge.textContent = 'RUNNING';
+      } else {
+        badge.className = 'badge badge-paused';
+        badge.textContent = 'PAUSED';
+      }
+    }
+
+    function updateMarketBars(data) {
+      if (data.timestamp) {
+        document.getElementById('sim-clock').textContent = data.timestamp.replace('T', ' ').substring(0, 19);
+      }
+      const tickerList = document.getElementById('ticker-list');
+      tickerList.innerHTML = '';
+      for (const [ticker, bar] of Object.entries(data.bars)) {
+        const change = bar.close - bar.open;
+        const color = change >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        const sign = change >= 0 ? '+' : '';
+        tickerList.innerHTML += `
+          <div class="ticker-row">
+            <div>
+              <div class="ticker-symbol">${ticker}</div>
+              <div style="font-size:11px; color:var(--text-muted);">Vol: ${bar.volume.toLocaleString()}</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="ticker-price" style="color: ${color}">$${bar.close.toFixed(2)}</div>
+              <div style="font-size:11px; color:${color}">${sign}${change.toFixed(2)}</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function updateAccountUI(acc) {
+      document.getElementById('stat-equity').textContent = '$' + acc.equity.toLocaleString(undefined, {minimumFractionDigits: 2});
+      document.getElementById('stat-cash').textContent = '$' + acc.cash.toLocaleString(undefined, {minimumFractionDigits: 2});
+      
+      const uEl = document.getElementById('stat-unrealized');
+      uEl.textContent = '$' + acc.unrealized_pnl.toFixed(2);
+      uEl.className = 'stat-val ' + (acc.unrealized_pnl >= 0 ? 'positive' : 'negative');
+
+      const rEl = document.getElementById('stat-realized');
+      rEl.textContent = '$' + acc.realized_pnl.toFixed(2);
+      rEl.className = 'stat-val ' + (acc.realized_pnl >= 0 ? 'positive' : 'negative');
+
+      if (acc.margin) {
+        document.getElementById('stat-bp').textContent = '$' + acc.margin.buying_power.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('stat-leverage').textContent = `${acc.margin.leverage.toFixed(2)}x / $${acc.margin.maintenance_margin_requirement.toFixed(0)}`;
+      }
+
+      // Update Equity Chart
+      if (equityChart) {
+        equityLabels.push('');
+        equityData.push(acc.equity);
+        if (equityData.length > 100) {
+          equityLabels.shift();
+          equityData.shift();
+        }
+        equityChart.update();
+      }
+
+      // Render Positions
+      const posBody = document.getElementById('positions-body');
+      const positions = Object.values(acc.positions || {});
+      if (positions.length === 0) {
+        posBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions</td></tr>';
+      } else {
+        posBody.innerHTML = positions.map(p => `
+          <tr>
+            <td><strong>${p.ticker}</strong></td>
+            <td>${p.quantity}</td>
+            <td>$${p.avg_entry_price.toFixed(2)}</td>
+            <td>$${p.current_price.toFixed(2)}</td>
+            <td class="${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}">$${p.unrealized_pnl.toFixed(2)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    function addTradeRow(t) {
+      const tbody = document.getElementById('trades-body');
+      const row = `
+        <tr>
+          <td><strong>${t.ticker}</strong></td>
+          <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
+          <td>$${t.price.toFixed(2)}</td>
+          <td>${t.quantity}</td>
+          <td>$${t.commission.toFixed(2)}</td>
+        </tr>
+      `;
+      if (tbody.innerHTML.includes('No executions yet')) {
+        tbody.innerHTML = row;
+      } else {
+        tbody.insertAdjacentHTML('afterbegin', row);
+      }
+    }
+
+    async function fetchOrders() {
+      try {
+        const res = await fetch('/api/v1/orders');
+        const orders = await res.json();
+        const tbody = document.getElementById('orders-body');
+        if (orders.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No active orders</td></tr>';
+        } else {
+          tbody.innerHTML = orders.map(o => `
+            <tr>
+              <td><strong>${o.ticker}</strong></td>
+              <td>${o.side}</td>
+              <td>${o.remaining_quantity}/${o.quantity}</td>
+              <td>${o.order_type}</td>
+              <td><button onclick="cancelOrder('${o.order_id}')" style="padding:2px 8px; font-size:11px;">Cancel</button></td>
+            </tr>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('Failed to fetch orders:', e);
+      }
+    }
+
+    function sendSimControl(action) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action } }));
+      }
+      setTimeout(fetchStatus, 300);
+    }
+
+    function setSpeed(speed) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action: 'speed', speed } }));
+      }
+    }
+
+    function toggleLimitPrice(type) {
+      document.getElementById('group-limit').style.display = (type === 'LIMIT' || type === 'STOP') ? 'flex' : 'none';
+    }
+
+    async function submitOrder() {
+      const ticker = document.getElementById('ord-ticker').value;
+      const side = document.getElementById('ord-side').value;
+      const order_type = document.getElementById('ord-type').value;
+      const quantity = parseFloat(document.getElementById('ord-qty').value);
+      const priceVal = parseFloat(document.getElementById('ord-price').value);
+
+      const payload = {
+        ticker,
+        side,
+        order_type,
+        quantity,
+        limit_price: order_type === 'LIMIT' ? priceVal : null,
+        stop_price: order_type === 'STOP' ? priceVal : null,
+      };
+
+      try {
+        const res = await fetch('/api/v1/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert('Order error: ' + (err.detail || 'Failed'));
+        } else {
+          fetchOrders();
+        }
+      } catch (e) {
+        alert('Network error: ' + e);
+      }
+    }
+
+    async function cancelOrder(orderId) {
+      await fetch(`/api/v1/orders/${orderId}`, { method: 'DELETE' });
+      fetchOrders();
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/v1/sim/status');
+        const data = await res.json();
+        updateClockStatus(data);
+      } catch (e) {}
+    }
+
+    window.onload = () => {
+      initChart();
+      connectWS();
+      fetchOrders();
+      fetchStatus();
+      setInterval(fetchOrders, 4000);
+    };
+  </script>
+</body>
+</html>

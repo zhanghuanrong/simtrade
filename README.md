@@ -2,22 +2,145 @@
 
 SimTrade is a high-performance, realistic paper trading simulation server designed for quantitative research, algorithmic trading bots, and market replay.
 
-## Features
-- **Multi-Ticker Market Data Replay**: Synchronized replay of 1-minute OHLCV bars (extensible to ticks/seconds) across arbitrary ticker lists.
-- **Realistic Order Execution Engine**: Market, Limit, Stop, and Stop-Limit orders with realistic fill price estimation, slippage models, and bar volume participation limits.
-- **Configurable Margin & Risk Management**: Reg-T style leverage, initial/maintenance margin tracking, borrow fees, and automated liquidation.
-- **Multi-Protocol Support**: Full WebSocket streaming and REST APIs with Swagger UI (`/docs`).
-- **Web Dashboard**: Real-time visual monitoring of price charts, account equity, open positions, active orders, and trade tape.
-- **Python Client SDK**: Async client for trading bots to connect, stream, and trade in a few lines of code.
-- **Reporting & Auditing**: Performance metrics (Sharpe ratio, max drawdown, win rate) and transaction ledger export.
+It simulates an exchange and broker environment, publishing synchronized multi-ticker market data feeds (e.g. 1-minute OHLCV bars), maintaining paper trader accounts, matching orders with realistic execution prices and slippage, and enforcing configurable margin and risk policies.
 
-## Quickstart
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Key Features
+
+1. **Multi-Ticker Market Data Replay**:
+   - Synchronized replay of 1-minute OHLCV bar feeds across arbitrary ticker lists.
+   - Built-in realistic Geometric Brownian Motion synthetic data generator or CSV historical data playback.
+   - Configurable simulation clock: Step-by-step mode or real-time simulation with speed multipliers ($1\times, 10\times, 60\times, \text{MAX}$).
+
+2. **Realistic Matching Engine**:
+   - Order types: `MARKET`, `LIMIT`, `STOP`, and `STOP_LIMIT`.
+   - Execution against 1-minute bars using $[Low, High]$ boundaries and configurable slippage models.
+   - Realistic volume participation limits (e.g., maximum $10\%$ of bar volume per execution) with partial fills and `TimeInForce` (`GTC`, `DAY`, `IOC`, `FOK`).
+   - Commissions and fee tracking.
+
+3. **Margin & Risk Management Policy**:
+   - Reg-T style initial margin (e.g., $50\%$) and maintenance margin (e.g., $25\%$).
+   - Dynamic buying power calculation and leverage monitoring.
+   - Full short selling support with borrow fees and cash collateral tracking.
+   - Margin call detection and automated liquidation when $\text{Equity} < \text{Maintenance Margin}$.
+   - Daily/hourly borrowing interest on debit cash balances.
+
+4. **Multi-Protocol & Network Interfaces**:
+   - **Interactive Web Dashboard**: Visual interface with live ticker prices, interactive equity curve, position table, active orders, and trade tape.
+   - **REST API with Swagger Docs**: Clean endpoints for orders, accounts, positions, and simulation controls at `/docs`.
+   - **WebSocket Streams**: Real-time bi-directional streaming at `/ws/unified` for market bars, order fills, and account telemetry.
+   - **Python Client SDK**: Async client library (`SimTradeClient`) for algorithmic bots.
+
+5. **Reporting & Auditing**:
+   - Immutable event ledger for all orders, fills, margin calls, and portfolio snapshots.
+   - Quantitative performance analytics: Total Return, Sharpe Ratio, Sortino Ratio, Maximum Drawdown ($ and %), Win Rate, and Profit Factor.
+
+---
+
+## Installation
+
 ```bash
-# Setup environment
+# Clone repository
+git clone git@github.com:zhanghuanrong/simtrade.git
+cd simtrade
+
+# Setup virtual environment using uv or venv
 uv venv
 source .venv/bin/activate
-uv pip install -e ".[dev]"
 
-# Run server with synthetic or historical data
-simtrade serve --port 8000 --speed 10
+# Install dependencies in editable mode
+uv pip install -e ".[dev]"
 ```
+
+---
+
+## Quickstart
+
+### 1. Launch Simulation Server
+```bash
+# Start server with 4 tickers at 10x replay speed
+simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10 --port 8000
+```
+Open your browser to:
+- **Web Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
+- **Interactive API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 2. Generate Sample 1m OHLCV Data (Optional)
+```bash
+simtrade generate-data --days 2 --output-dir data
+```
+
+### 3. Run Algorithmic Trading Bot Example
+```bash
+python examples/momentum_trader_bot.py
+```
+
+---
+
+## Python Client SDK Usage
+
+```python
+import asyncio
+from simtrade.client.trader_client import SimTradeClient
+from simtrade.models.order import OrderType
+
+async def main():
+    async with SimTradeClient("http://localhost:8000") as client:
+        # Subscribe to market bars
+        @client.on_bar
+        async def on_bar(bars):
+            print("Received 1m bars for:", list(bars.keys()))
+            if "AAPL" in bars and bars["AAPL"].close > bars["AAPL"].open:
+                # Submit market buy order
+                await client.buy("AAPL", quantity=10, order_type=OrderType.MARKET)
+
+        # Subscribe to trade fills
+        @client.on_trade
+        async def on_trade(trade):
+            print(f"Fill: {trade.side} {trade.quantity} {trade.ticker} @ ${trade.price}")
+
+        # Start playback at 20x speed
+        await client.set_speed(20.0)
+        await client.start_sim()
+        await asyncio.sleep(10)
+
+asyncio.run(main())
+```
+
+---
+
+## API Endpoints Overview
+
+| Category | Endpoint | Method | Description |
+|---|---|---|---|
+| **Account** | `/api/v1/account` | GET | Retrieve cash, equity, and margin health |
+| **Positions** | `/api/v1/positions` | GET | List open long and short positions |
+| **Orders** | `/api/v1/orders` | POST | Submit market, limit, stop, or stop-limit order |
+| **Orders** | `/api/v1/orders` | GET | List active orders in book |
+| **Orders** | `/api/v1/orders/{id}` | DELETE | Cancel pending order |
+| **Trades** | `/api/v1/trades` | GET | Retrieve execution trade history |
+| **Market Data** | `/api/v1/market/bars/latest` | GET | Latest 1m OHLCV bars |
+| **Simulation** | `/api/v1/sim/start` | POST | Start continuous replay |
+| **Simulation** | `/api/v1/sim/pause` | POST | Pause replay |
+| **Simulation** | `/api/v1/sim/step` | POST | Manually step clock by 1 minute |
+| **Simulation** | `/api/v1/sim/speed` | POST | Update speed multiplier |
+| **Reports** | `/api/v1/reports/performance` | GET | Compute Sharpe, Drawdown, Return |
+| **Audit** | `/api/v1/reports/ledger` | GET | Retrieve audit event ledger |
+
+---
+
+## Testing
+
+Run the test suite with pytest:
+```bash
+pytest -v
+```
+
+---
+
+## License
+MIT
