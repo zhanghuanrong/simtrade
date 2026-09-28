@@ -96,12 +96,8 @@ async def websocket_unified_endpoint(websocket: WebSocket):
                     action = data.get("action")
                     if action == "start":
                         sim.start()
-                    elif action == "pause":
-                        sim.pause()
-                    elif action == "step":
-                        await sim.step()
-                    elif action == "speed":
-                        sim.clock.set_speed(data.get("speed", 1.0))
+                    elif action == "stop":
+                        sim.stop()
 
                 elif msg_type == "STEP_UNTIL":
                     account_id = data.get("account_id", "trader_1")

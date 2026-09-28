@@ -10,9 +10,10 @@ SimTrade is an event-driven paper trading simulation server designed for quantit
 3. [Querying Simulation Metadata & Time Range](#3-querying-simulation-metadata--time-range)
 4. [Negotiating Initial Account Settings & Run Tagging](#4-negotiating-initial-account-settings--run-tagging)
 5. [Controlling the Simulation Lifecycle](#5-controlling-the-simulation-lifecycle)
-6. [Saving & Exporting Trades and Audit History](#6-saving--exporting-trades-and-audit-history)
-7. [Inspecting Passes in the Web Dashboard](#7-inspecting-passes-in-the-web-dashboard)
-8. [Complete End-to-End Python Client Example](#8-complete-end-to-end-python-client-example)
+6. [Order Submission, Order Details & Queries](#6-order-submission-order-details--queries)
+7. [Saving & Exporting Trades and Audit History](#7-saving--exporting-trades-and-audit-history)
+8. [Inspecting Passes in the Web Dashboard](#8-inspecting-passes-in-the-web-dashboard)
+9. [Complete End-to-End Python Client Example](#9-complete-end-to-end-python-client-example)
 
 ---
 
@@ -34,7 +35,6 @@ simtrade serve [OPTIONS]
 |---|---|---|---|
 | `--host` | `str` | `0.0.0.0` | Network interface to bind. |
 | `--port` | `int` | `6688` | Port to listen on. |
-| `--speed` | `float` | `10.0` | Playback speed multiplier (`1.0` = real-time, `60.0` = 1 simulated min per sec, `0` = MAX speed). |
 | `--tickers` | `str` | `AAPL,NVDA,TSLA,MSFT` | Comma-separated list of tickers to stream, or `ALL` to load all symbols in the dataset. |
 | `--data-file` | `str` | `None` | Explicit path to a Parquet or CSV file. Defaults to `data/1m_20260817_now.parquet` if present. |
 | `--data-dir` | `str` | `data` | Directory containing historical data files. |
@@ -44,14 +44,14 @@ simtrade serve [OPTIONS]
 ### Example Commands
 
 ```bash
-# 1. Run server with top tickers at 10x replay speed
-simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10
+# 1. Run server with top tickers on port 6688
+simtrade serve --tickers AAPL,NVDA,TSLA,MSFT
 
-# 2. Run server with ALL 149 tickers from the parquet file at 5x speed
-simtrade serve --tickers ALL --speed 5 --port 6688
+# 2. Run server with ALL 149 tickers from the parquet file
+simtrade serve --tickers ALL --port 6688
 
-# 3. Maximum non-blocking speed (as fast as CPU and event loop can process)
-simtrade serve --tickers AAPL,NVDA --speed 0
+# 3. Custom leverage (4x leverage = 25% margin) and 15% maintenance margin
+simtrade serve --tickers AAPL,NVDA --leverage 4.0 --maint-margin 0.15
 ```
 
 Once running, the server provides:
@@ -126,7 +126,17 @@ print(f"Total Bars: {meta['total_bars']}, Available Tickers: {meta['available_ti
 
 ## 4. Negotiating Initial Account Settings & Run Tagging
 
-You can register a tagged simulation pass with custom initial cash, initial positions, and custom margin terms.
+You can register a tagged simulation pass with a defined starting **Total Equity**, initial holdings, and margin parameters.
+
+### Margin Occupancy & Initial Total Equity Rules:
+- **Total Equity** is defined as $\text{Cash} + \text{Net Market Value of Positions}$.
+- `initial_entry_prices` is **not required**. The server automatically prices initial holdings using current market mark prices.
+- Initial positions **occupy margin immediately**:
+  $$\text{Initial Margin Requirement} = \sum |\text{Quantity}_i| \times \text{Mark Price}_i \times \text{Initial Margin Rate}$$
+- Liquid cash is initialized as:
+  $$\text{Cash} = \text{initial\_total\_equity} - \sum (\text{Quantity}_i \times \text{Mark Price}_i)$$
+- **Available Margin** (and initial Buying Power) reflect the margin occupied by initial holdings:
+  $$\text{Available Margin} = \text{Total Equity} - \text{Initial Margin Requirement}$$
 
 ### REST Endpoint
 `POST /api/v1/account/setup`
@@ -136,37 +146,33 @@ You can register a tagged simulation pass with custom initial cash, initial posi
 {
   "account_id": "momentum_v1_run",
   "tag": "sma_fast_pass",
-  "initial_cash": 100000.0,
+  "initial_total_equity": 100000.0,
   "leverage": 4.0,
   "initial_margin_rate": 0.25,
   "maintenance_margin_rate": 0.15,
   "initial_positions": {
     "AAPL": 100.0,
     "NVDA": 50.0
-  },
-  "initial_entry_prices": {
-    "AAPL": 305.0,
-    "NVDA": 225.0
   }
 }
 ```
 
 ### Field Explanations:
-- `account_id`: Unique identifier for this simulation pass (e.g. `run_pass_1`).
+- `account_id`: Unique identifier for this simulation pass (e.g. `momentum_v1_run`).
 - `tag`: Human-readable label (shown in the UI dropdown).
-- `initial_cash`: Liquid cash starting capital.
-- `leverage`: Max leverage permitted (e.g., `4.0` gives 4x buying power).
+- `initial_total_equity`: Total portfolio starting equity (defaults to `100000.0`).
+- `initial_cash`: Optional. If specified, sets liquid cash directly; otherwise, computed as `initial_total_equity - positions_market_value`.
+- `leverage`: Max leverage permitted (e.g., `4.0` gives 4x buying power = 25% margin).
 - `initial_margin_rate`: Fraction of position value required as margin (e.g., `0.25` for 25%).
 - `maintenance_margin_rate`: Maintenance threshold before liquidation (e.g., `0.15` for 15%).
 - `initial_positions`: Starting holdings (`> 0` for Long, `< 0` for Short).
-- `initial_entry_prices`: Optional cost basis override for initial positions.
 
 ### Python SDK:
 ```python
 acc = await client.setup_account(
     account_id="momentum_v1_run",
     tag="sma_fast_pass",
-    initial_cash=100000.0,
+    initial_total_equity=100000.0,
     leverage=4.0,
     initial_positions={"AAPL": 100}
 )
@@ -191,7 +197,9 @@ Key response fields:
 
 ## 5. Controlling the Simulation Lifecycle
 
-### 1. Start Continuous Playback
+Time in SimTrade is strictly server-driven. The baseline progression pace is `1.0x` (real-time virtual time). When a client needs to advance time or evaluate strategies over intervals, it accelerates time forward using `step_until`.
+
+### 1. Start Continuous Playback (1.0x Baseline)
 ```bash
 curl -X POST "http://127.0.0.1:6688/api/v1/sim/start"
 ```
@@ -200,27 +208,8 @@ Or via SDK:
 await client.start_sim()
 ```
 
-### 2. Pause Playback
-```bash
-curl -X POST "http://127.0.0.1:6688/api/v1/sim/pause"
-```
-Or via SDK:
-```python
-await client.pause_sim()
-```
-
-### 3. Step 1 Minute Manually
-```bash
-curl -X POST "http://127.0.0.1:6688/api/v1/sim/step"
-```
-Or via SDK:
-```python
-step_data = await client.step_sim()
-print("Stepped to:", step_data["timestamp"])
-```
-
-### 4. Accelerate Simulation Forward: Step Until Target Timestamp (`step_until`)
-The server strictly drives simulation time forward with a baseline ratio of 1.0 (realtime). A client can also accelerate time forward to any target timestamp:
+### 2. Accelerate Forward to Target Timestamp (`step_until`)
+Clients accelerate forward to a target timestamp from the current $T_{anchor}$:
 
 ```bash
 curl -X POST "http://127.0.0.1:6688/api/v1/sim/step_until" \
@@ -248,7 +237,7 @@ Or over unified WebSocket:
 ```
 
 #### `step_until` Rules & Behaviors:
-1. **$T_{anchor}$ Progression**: The server maintains $T_{anchor}$, the timestamp up to which historical bar data has been published. `step_until` processes all intermediate bars between $T_{anchor}$ and `target_time`.
+1. **$T_{anchor}$ Progression**: Server maintains $T_{anchor}$, the timestamp where historical bar data has been published. `step_until` processes all intermediate bars between $T_{anchor}$ and `target_time`.
 2. **Pure Client Request & Past Ignored**: If `target_time <= current_time`, the server ignores the request without rolling backward:
    ```json
    {
@@ -258,9 +247,9 @@ Or over unified WebSocket:
      "bars_processed": 0
    }
    ```
-3. **Non-Trading Gaps (Overnight/Weekend)**: The server does not invent or guess non-trading gap data. If the client requests stepping into a gap, the server fast-forwards the clock to `target_time` and replies with empty bars (`bars: {}`) and status `"TARGET_REACHED"`.
+3. **Non-Trading Gaps (Overnights / Weekends)**: The server does not invent non-trading gap data. If the client steps into a gap, the clock fast-forwards to `target_time` and replies with empty bars (`bars: {}`) and status `"TARGET_REACHED"`.
 4. **Intermediate Lifecycle Execution**: All limit/stop orders, mark prices, financing fees, and performance snapshots are processed sequentially along each 1-minute step.
-5. **Margin Liquidation Early Halt**: If an account incurs a margin call (`equity < maintenance_margin_requirement`), `step_until` immediately halts execution at that exact bar, returning:
+5. **Margin Liquidation Early Halt**: If an account incurs a margin call (`equity < maintenance_margin_requirement`), execution immediately halts at that exact bar:
    ```json
    {
      "status": "LIQUIDATION_TRIGGERED",
@@ -270,23 +259,12 @@ Or over unified WebSocket:
      "bars_processed": 14
    }
    ```
-   The client receives this feedback with the updated timestamp. Once handled, the client can issue subsequent `step_until` commands from that updated position.
+   The client receives this feedback with the updated timestamp. After handling the feedback, subsequent `step_until` calls will resume from this updated timestamp.
 
-### 5. Change Playback Speed on-the-Fly
-```bash
-curl -X POST "http://127.0.0.1:6688/api/v1/sim/speed" \
-     -H "Content-Type: application/json" \
-     -d '{"speed_multiplier": 60.0}'
-```
-Or via SDK:
-```python
-await client.set_speed(60.0)  # 1 simulated minute per second
-```
-
-### 5. Check if Simulation is Finished
+### 3. Check if Simulation is Finished
 Check `meta['is_finished']` via `GET /api/v1/sim/metadata`. When `is_finished == true`, all historical bars in the dataset have been replayed.
 
-### 6. Reset Simulation for a New Pass
+### 4. Reset Simulation for a New Pass
 Rewinds the clock cursor back to the start of the Parquet dataset (or a specified start time) and clears active unfilled orders:
 ```bash
 curl -X POST "http://127.0.0.1:6688/api/v1/sim/reset" \
@@ -300,7 +278,141 @@ await client.reset_sim()
 
 ---
 
-## 6. Saving & Exporting Trades and Audit History
+## 6. Order Submission, Order Details & Queries
+
+SimTrade provides comprehensive order management and detailed order querying.
+
+### 1. Submit an Order
+Submit a new order (`MARKET`, `LIMIT`, `STOP`, `STOP_LIMIT`) via REST:
+
+```bash
+curl -X POST "http://127.0.0.1:6688/api/v1/orders?account_id=momentum_v1_run" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "ticker": "AAPL",
+       "side": "BUY",
+       "order_type": "LIMIT",
+       "quantity": 25,
+       "limit_price": 305.50,
+       "time_in_force": "GTC",
+       "client_order_id": "my_signal_101"
+     }'
+```
+
+Or via Python SDK:
+```python
+order = await client.submit_order(
+    ticker="AAPL",
+    side=OrderSide.BUY,
+    quantity=25,
+    order_type=OrderType.LIMIT,
+    limit_price=305.50,
+    client_order_id="my_signal_101"
+)
+print("Order created:", order.order_id, order.status)
+```
+
+Convenience methods on `SimTradeClient`:
+```python
+await client.buy("AAPL", quantity=10)
+await client.sell("AAPL", quantity=10)
+await client.short("NVDA", quantity=20, order_type=OrderType.LIMIT, limit_price=230.0)
+```
+
+---
+
+### 2. Query Specific Order Details (`GET /api/v1/orders/{order_id}`)
+
+You can retrieve complete details for any order by its `order_id`, regardless of whether it is active, partially filled, filled, cancelled, or rejected.
+
+#### REST Endpoint
+`GET /api/v1/orders/{order_id}`
+
+#### Example Request:
+```bash
+curl -X GET "http://127.0.0.1:6688/api/v1/orders/f47ac10b-58cc-4372-a567-0e02b2c3d479"
+```
+
+#### Example Response:
+```json
+{
+  "order_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "client_order_id": "my_signal_101",
+  "account_id": "momentum_v1_run",
+  "ticker": "AAPL",
+  "side": "BUY",
+  "order_type": "LIMIT",
+  "quantity": 25.0,
+  "limit_price": 305.5,
+  "stop_price": null,
+  "time_in_force": "GTC",
+  "status": "FILLED",
+  "filled_quantity": 25.0,
+  "remaining_quantity": 0.0,
+  "avg_fill_price": 305.42,
+  "reject_reason": null,
+  "created_at": "2026-09-28T16:30:00.123456Z",
+  "updated_at": "2026-09-28T16:31:00.654321Z"
+}
+```
+
+#### Order Detail Fields:
+| Field | Type | Description |
+|---|---|---|
+| `order_id` | `string` | Unique UUID assigned by the server. |
+| `client_order_id` | `string \| null` | Optional client-provided identifier for idempotency and correlation. |
+| `account_id` | `string` | ID of the account or pass that owns the order. |
+| `ticker` | `string` | Instrument symbol (e.g. `"AAPL"`). |
+| `side` | `string` | `"BUY"`, `"SELL"`, or `"SELL_SHORT"`. |
+| `order_type` | `string` | `"MARKET"`, `"LIMIT"`, `"STOP"`, or `"STOP_LIMIT"`. |
+| `quantity` | `float` | Original requested order size. |
+| `limit_price` | `float \| null` | Limit price for LIMIT/STOP_LIMIT orders. |
+| `stop_price` | `float \| null` | Activation trigger price for STOP/STOP_LIMIT orders. |
+| `time_in_force` | `string` | `"GTC"` (Good 'Til Cancelled), `"DAY"`, `"IOC"` (Immediate or Cancel), `"FOK"` (Fill or Kill). |
+| `status` | `string` | Current lifecycle state: `"PENDING"`, `"ACCEPTED"`, `"PARTIALLY_FILLED"`, `"FILLED"`, `"CANCELLED"`, `"REJECTED"`. |
+| `filled_quantity` | `float` | Cumulative number of shares executed so far. |
+| `remaining_quantity` | `float` | Remaining unfilled quantity (`quantity - filled_quantity`). |
+| `avg_fill_price` | `float` | Volume-weighted average price of all execution fills. |
+| `reject_reason` | `string \| null` | Error reason if order was rejected by margin check or exchange validation. |
+| `created_at` | `string (ISO)` | Timestamp when the order was submitted. |
+| `updated_at` | `string (ISO)` | Timestamp of last execution fill, cancellation, or status update. |
+
+#### Python SDK Example:
+```python
+order = await client.get_order("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+print(f"Order Status: {order.status.value}")
+print(f"Filled: {order.filled_quantity}/{order.quantity} @ ${order.avg_fill_price:.2f}")
+```
+
+---
+
+### 3. Query Active Orders (`GET /api/v1/orders`)
+List all currently open and unfilled orders:
+```bash
+curl -X GET "http://127.0.0.1:6688/api/v1/orders?account_id=momentum_v1_run"
+```
+Or via SDK:
+```python
+active_orders = await client.get_active_orders()
+for o in active_orders:
+    print(f"Open: {o.side} {o.quantity} {o.ticker} Limit: {o.limit_price}")
+```
+
+---
+
+### 4. Cancel an Order (`DELETE /api/v1/orders/{order_id}`)
+```bash
+curl -X DELETE "http://127.0.0.1:6688/api/v1/orders/f47ac10b-58cc-4372-a567-0e02b2c3d479?account_id=momentum_v1_run"
+```
+Or via SDK:
+```python
+cancelled_order = await client.cancel("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+print("Cancelled order:", cancelled_order.order_id, cancelled_order.status)
+```
+
+---
+
+## 7. Saving & Exporting Trades and Audit History
 
 When a simulation pass finishes (or at any time), you can export the full transaction history and performance metrics.
 
@@ -340,34 +452,32 @@ await client.save_session(account_id="momentum_v1_run", output_dir="reports")
 
 ---
 
-## 7. Inspecting Passes in the Web Dashboard
+## 8. Inspecting Passes in the Web Dashboard
 
 Visit [http://localhost:6688/dashboard](http://localhost:6688/dashboard):
 
 1. **Pass / Account Dropdown**:
    - Located in the top header.
-   - Shows all active accounts and passes (e.g. `trader_1 (default)`, `momentum_v1_run`, `mean_revert_pass_2`).
+   - Shows all active accounts and passes (e.g. `trader_1 (default)`, `momentum_v1_run`).
    - Selecting a pass immediately updates the KPI cards, open positions table, active orders table, and equity curve chart for that specific pass.
 2. **`+ New Pass` Button**:
-   - Opens a modal where you can specify Account ID, Starting Cash, Leverage multiplier, and Initial Holdings.
+   - Opens a modal where you can specify Account ID, Initial Total Equity, Leverage multiplier, and Initial Holdings.
    - Creating the pass automatically registers it and switches the UI view to it.
 3. **Simulation Timeline & Progress Bar**:
    - Displays the dataset date range (e.g. `2026-08-17 13:31 ~ 2026-09-25 20:00`), current virtual time, and progress percentage.
-4. **Playback & Reset Controls**:
-   - `Play`, `Pause`, `Step 1m`, and `Reset Run`.
-   - Speed buttons (`1x`, `10x`, `60x`, `MAX`).
-5. **Report & Export Buttons**:
-   - **`Export Trades`**: Directly downloads the CSV of all trades for the active pass.
-   - **`Report`**: Opens the quantitative summary modal with Initial Capital, Final Equity, Total PnL, Annualized Sharpe Ratio, Max Drawdown, and a "Save Session to Server" button.
+4. **Playback & Export Controls**:
+   - `Play (1.0x Realtime)` and `Reset Run`.
+   - `Export Trades` and `Report`.
 
 ---
 
-## 8. Complete End-to-End Python Client Example
+## 9. Complete End-to-End Python Client Example
 
 Save the script below as `my_trading_bot.py` and run it against the server:
 
 ```python
 import asyncio
+from datetime import datetime, timedelta
 from simtrade.client.trader_client import SimTradeClient
 from simtrade.models.order import OrderType
 
@@ -381,58 +491,44 @@ async def run_simulation_pass():
         # 2. Reset simulator to the beginning of the dataset
         await client.reset_sim()
 
-        # 3. Negotiate initial account settings for this pass
+        # 3. Negotiate initial account settings with $100k total equity and initial AAPL holding
         pass_name = "momentum_v1_run"
         acc = await client.setup_account(
             account_id=pass_name,
             tag="sma_momentum_strategy",
-            initial_cash=100_000.0,
-            leverage=4.0,  # 4x leverage
+            initial_total_equity=100_000.0,
+            leverage=4.0,  # 4x leverage = 25% margin
+            initial_positions={"AAPL": 50.0},
         )
-        print(f"Pass '{acc.account_id}' created with Buying Power: ${acc.margin.buying_power:,.2f}")
+        print(f"Pass '{acc.account_id}' created with Equity: ${acc.equity:,.2f}, Buying Power: ${acc.margin.buying_power:,.2f}")
 
-        # 4. Define trading logic on incoming 1-minute bars
-        price_history = []
+        # 4. Accelerate forward 10 minutes
+        current_time = datetime.fromisoformat(meta["current_time"])
+        target_time = current_time + timedelta(minutes=10)
+        step_res = await client.step_until(target_time)
+        print(f"Stepped to {step_res['current_time']} (Processed {step_res['bars_processed']} bars)")
 
-        @client.on_bar
-        async def on_bar(bars):
-            if "AAPL" in bars:
-                aapl_bar = bars["AAPL"]
-                price_history.append(aapl_bar.close)
+        # 5. Place a limit buy order and query order details
+        order = await client.buy("AAPL", quantity=20, order_type=OrderType.LIMIT, limit_price=310.0)
+        print(f"Submitted Order ID: {order.order_id}, Initial Status: {order.status.value}")
 
-                # Simple moving average crossover logic
-                if len(price_history) >= 5:
-                    sma5 = sum(price_history[-5:]) / 5.0
-                    if aapl_bar.close > sma5:
-                        # Buy 50 shares
-                        await client.buy("AAPL", quantity=50, order_type=OrderType.MARKET)
-                    elif aapl_bar.close < sma5:
-                        # Sell / close 50 shares
-                        await client.sell("AAPL", quantity=50, order_type=OrderType.MARKET)
+        # Accelerate forward another 5 minutes to trigger matching
+        target_time_2 = target_time + timedelta(minutes=5)
+        await client.step_until(target_time_2)
 
-        # 5. Listen to executions
-        @client.on_trade
-        async def on_trade(trade):
-            print(f"Trade Fill: {trade.side.value} {trade.quantity} {trade.ticker} @ ${trade.price:.2f} (Fee: ${trade.commission:.2f})")
+        # 6. Retrieve detailed order result
+        order_detail = await client.get_order(order.order_id)
+        print(f"Updated Order Status: {order_detail.status.value}")
+        print(f"Filled Quantity:      {order_detail.filled_quantity}/{order_detail.quantity}")
+        print(f"Avg Fill Price:       ${order_detail.avg_fill_price:.2f}")
 
-        # 6. Start simulation at 50x speed
-        print("Starting simulation pass...")
-        await client.set_speed(50.0)
-        await client.start_sim()
-
-        # Run for 15 seconds of real time
-        await asyncio.sleep(15)
-
-        # 7. Pause and check results
-        await client.pause_sim()
+        # 7. Check performance
         final_acc = await client.get_account()
         perf = await client.get_performance()
 
         print("\n=== Pass Performance Summary ===")
         print(f"Final Equity:   ${final_acc.equity:,.2f}")
         print(f"Total PnL:      ${perf['total_pnl']:,.2f} ({perf['total_return_pct']}%)")
-        print(f"Sharpe Ratio:   {perf['sharpe_ratio']}")
-        print(f"Max Drawdown:   ${perf['max_drawdown_usd']:,.2f} ({perf['max_drawdown_pct']}%)")
         print(f"Total Trades:   {perf['total_trades']}")
 
         # 8. Save session files to server & export local CSV

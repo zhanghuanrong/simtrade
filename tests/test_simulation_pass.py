@@ -26,17 +26,14 @@ def test_simulation_metadata_and_time_range(client):
 
 
 def test_account_negotiation_and_setup(client):
-    # Setup a tagged pass with starting positions and custom leverage
+    # Setup a tagged pass with starting positions, initial total equity, and custom leverage
     setup_payload = {
         "account_id": "momentum_pass_1",
         "tag": "sma_fast_run",
-        "initial_cash": 75000.0,
+        "initial_total_equity": 100000.0,
         "leverage": 4.0,  # 4x leverage = 25% initial margin
         "initial_positions": {
             "AAPL": 50.0,
-        },
-        "initial_entry_prices": {
-            "AAPL": 300.0,
         }
     }
     resp = client.post("/api/v1/account/setup", json=setup_payload)
@@ -44,9 +41,12 @@ def test_account_negotiation_and_setup(client):
     acc = resp.json()
     assert acc["account_id"] == "momentum_pass_1"
     assert acc["tag"] == "sma_fast_run"
-    assert acc["cash"] == 75000.0
+    assert acc["equity"] == 100000.0
     assert "AAPL" in acc["positions"]
     assert acc["positions"]["AAPL"]["quantity"] == 50.0
+    # Positions occupy margin
+    assert acc["margin"]["initial_margin_requirement"] > 0.0
+    assert acc["cash"] < 100000.0  # Cash is equity minus position market value
     # Buying power at 4x leverage
     assert acc["margin"]["buying_power"] > 200000.0
 
@@ -58,9 +58,12 @@ def test_account_negotiation_and_setup(client):
 
 
 def test_simulation_reset_and_export(client):
-    # Step simulation forward
-    client.post("/api/v1/sim/step")
-    client.post("/api/v1/sim/step")
+    from datetime import datetime, timedelta
+
+    meta = client.get("/api/v1/sim/metadata").json()
+    curr_t = datetime.fromisoformat(meta["current_time"])
+    # Advance using step_until
+    client.post("/api/v1/sim/step_until", json={"target_time": (curr_t + timedelta(minutes=2)).isoformat()})
 
     # Place an order for default trader_1
     order_data = {
@@ -70,7 +73,7 @@ def test_simulation_reset_and_export(client):
         "quantity": 10,
     }
     client.post("/api/v1/orders?account_id=trader_1", json=order_data)
-    client.post("/api/v1/sim/step")
+    client.post("/api/v1/sim/step_until", json={"target_time": (curr_t + timedelta(minutes=3)).isoformat()})
 
     # Export trades as CSV
     csv_resp = client.get("/api/v1/reports/trades/csv?account_id=trader_1")
@@ -150,13 +153,13 @@ def test_step_until_liquidation_halt(client):
     meta = client.get("/api/v1/sim/metadata").json()
     current_dt = datetime.fromisoformat(meta["current_time"])
 
-    # Setup an account with underwater short position that triggers margin call
+    # Setup an account where positions occupy more margin than equity allows
     setup_resp = client.post("/api/v1/account/setup", json={
         "account_id": "margin_risk_trader",
         "tag": "risk_pass",
-        "initial_cash": 1000.0,
-        "initial_positions": {"AAPL": -50.0},
-        "initial_entry_prices": {"AAPL": 100.0},
+        "initial_total_equity": 1000.0,
+        "initial_positions": {"AAPL": 50.0},
+        "maintenance_margin_rate": 0.25,
     })
     assert setup_resp.status_code == 200
 

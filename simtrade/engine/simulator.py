@@ -101,6 +101,7 @@ class Simulator:
         if not valid:
             order.status = OrderStatus.REJECTED
             order.reject_reason = reject_reason
+            self.matcher.all_orders[order.order_id] = order
             self.ledger.record("ORDER_REJECTED", account_id, self.clock.current_time, {
                 "order_id": order.order_id,
                 "ticker": order.ticker,

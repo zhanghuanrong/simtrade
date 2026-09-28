@@ -52,29 +52,40 @@ class AccountManager:
         acc = Account(
             account_id=req.account_id,
             tag=req.tag,
-            cash=req.initial_cash,
-            initial_capital=req.initial_cash,
+            cash=0.0,
+            initial_capital=0.0,
             custom_margin_config=custom_cfg if custom_cfg else None,
         )
 
-        # Set up initial positions if specified
+        # Set up initial positions if specified (entry price always equals current mark price)
+        net_positions_value = 0.0
         if req.initial_positions:
             for ticker, qty in req.initial_positions.items():
                 if qty == 0:
                     continue
                 mark_p = mark_prices.get(ticker, 100.0)
-                entry_p = (req.initial_entry_prices or {}).get(ticker, mark_p)
+                entry_p = mark_p  # User does not care about initial_entry_prices; use mark price
                 pos = Position(
                     ticker=ticker,
                     quantity=qty,
                     avg_entry_price=entry_p,
                     current_price=mark_p,
+                    unrealized_pnl=0.0,
                 )
-                if qty > 0:
-                    pos.unrealized_pnl = round(qty * (mark_p - entry_p), 4)
-                else:
-                    pos.unrealized_pnl = round(abs(qty) * (entry_p - mark_p), 4)
                 acc.positions[ticker] = pos
+                net_positions_value += qty * mark_p
+
+        # Determine cash and total equity:
+        # Total Equity = Cash + Net Market Value of Positions
+        target_equity = req.initial_total_equity if req.initial_total_equity is not None else 100_000.0
+        if req.initial_cash is not None:
+            acc.cash = req.initial_cash
+            acc.equity = acc.cash + net_positions_value
+            acc.initial_capital = acc.equity
+        else:
+            acc.cash = round(target_equity - net_positions_value, 4)
+            acc.equity = round(target_equity, 4)
+            acc.initial_capital = round(target_equity, 4)
 
         self.update_account_valuation(acc)
         self.accounts[req.account_id] = acc

@@ -20,12 +20,15 @@ class MatchingEngine:
         self.config = config or MatchingConfig()
         # Active orders waiting for fills: order_id -> Order
         self.active_orders: Dict[str, Order] = {}
+        # Full historical registry of all orders (active, filled, cancelled, rejected): order_id -> Order
+        self.all_orders: Dict[str, Order] = {}
 
     def add_order(self, order: Order) -> Order:
         """Register an accepted order in the order book."""
         order.status = OrderStatus.ACCEPTED
         order.updated_at = utc_now()
         self.active_orders[order.order_id] = order
+        self.all_orders[order.order_id] = order
         return order
 
     def cancel_order(self, order_id: str) -> Optional[Order]:
@@ -34,8 +37,13 @@ class MatchingEngine:
             order = self.active_orders.pop(order_id)
             order.status = OrderStatus.CANCELLED
             order.updated_at = utc_now()
+            self.all_orders[order_id] = order
             return order
         return None
+
+    def get_order(self, order_id: str) -> Optional[Order]:
+        """Retrieve order details by order_id from active or historical registry."""
+        return self.active_orders.get(order_id) or self.all_orders.get(order_id)
 
     def calculate_commission(self, quantity: float, price: float) -> float:
         comm = quantity * self.config.commission_per_share

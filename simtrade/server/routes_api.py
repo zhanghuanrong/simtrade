@@ -66,11 +66,11 @@ def list_active_orders(account_id: Optional[str] = None):
 
 @api_router.get("/orders/{order_id}", response_model=Order, tags=["Orders"])
 def get_order(order_id: str):
-    """Retrieve details for a specific order."""
+    """Retrieve details for a specific order (active, filled, cancelled, or rejected)."""
     sim = get_simulator()
-    order = sim.matcher.active_orders.get(order_id)
+    order = sim.matcher.get_order(order_id)
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found or already completed/cancelled")
+        raise HTTPException(status_code=404, detail="Order not found")
     return order
 
 
@@ -114,32 +114,12 @@ def get_tickers():
 # -------------------------------------------------------------
 # Simulation Control Endpoints
 # -------------------------------------------------------------
-class SpeedPayload(BaseModel):
-    speed_multiplier: float
-
-
 @api_router.post("/sim/start", tags=["Simulation Control"])
 def start_simulation():
-    """Start or resume continuous simulation replay."""
+    """Start or resume continuous simulation replay at 1.0x baseline speed."""
     sim = get_simulator()
     sim.start()
-    return {"status": "started", "speed": sim.clock.speed_multiplier}
-
-
-@api_router.post("/sim/pause", tags=["Simulation Control"])
-def pause_simulation():
-    """Pause continuous simulation replay."""
-    sim = get_simulator()
-    sim.pause()
-    return {"status": "paused"}
-
-
-@api_router.post("/sim/step", tags=["Simulation Control"])
-async def step_simulation():
-    """Manually advance simulation clock by 1 minute interval."""
-    sim = get_simulator()
-    result = await sim.step()
-    return {"status": "stepped", **result}
+    return {"status": "started", "speed": 1.0}
 
 
 class StepUntilPayload(BaseModel):
@@ -162,14 +142,6 @@ async def step_until_target(payload: StepUntilPayload):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid ISO datetime format: {e}")
     return await sim.step_until(target_dt, account_id=payload.account_id)
-
-
-@api_router.post("/sim/speed", tags=["Simulation Control"])
-def set_simulation_speed(payload: SpeedPayload):
-    """Change playback speed multiplier (e.g. 1.0=realtime, 60.0=1s/min, 0=instant)."""
-    sim = get_simulator()
-    sim.clock.set_speed(payload.speed_multiplier)
-    return {"status": "speed_updated", "speed_multiplier": sim.clock.speed_multiplier}
 
 
 @api_router.get("/sim/status", tags=["Simulation Control"])

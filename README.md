@@ -71,8 +71,8 @@ uv pip install -e ".[dev]"
 
 ### 1. Launch Simulation Server
 ```bash
-# Start server with 4 tickers at 10x replay speed
-simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10 --port 6688
+# Start server with 4 tickers on port 6688
+simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --port 6688
 ```
 Open your browser to:
 - **Web Dashboard**: [http://localhost:6688/dashboard](http://localhost:6688/dashboard)
@@ -94,6 +94,7 @@ python examples/momentum_trader_bot.py
 
 ```python
 import asyncio
+from datetime import datetime, timedelta
 from simtrade.client.trader_client import SimTradeClient
 from simtrade.models.order import OrderType
 
@@ -103,19 +104,27 @@ async def main():
         @client.on_bar
         async def on_bar(bars):
             print("Received 1m bars for:", list(bars.keys()))
-            if "AAPL" in bars and bars["AAPL"].close > bars["AAPL"].open:
-                # Submit market buy order
-                await client.buy("AAPL", quantity=10, order_type=OrderType.MARKET)
 
         # Subscribe to trade fills
         @client.on_trade
         async def on_trade(trade):
             print(f"Fill: {trade.side} {trade.quantity} {trade.ticker} @ ${trade.price}")
 
-        # Start playback at 20x speed
-        await client.set_speed(20.0)
-        await client.start_sim()
-        await asyncio.sleep(10)
+        # Negotiate initial account terms ($100k equity)
+        await client.setup_account(account_id="bot_pass_1", initial_total_equity=100_000.0, leverage=4.0)
+
+        # Submit an order
+        order = await client.buy("AAPL", quantity=10, order_type=OrderType.MARKET)
+        print("Submitted order:", order.order_id)
+
+        # Accelerate simulation forward 5 minutes to execute
+        meta = await client.get_metadata()
+        target_time = datetime.fromisoformat(meta["current_time"]) + timedelta(minutes=5)
+        await client.step_until(target_time)
+
+        # Query order details
+        order_detail = await client.get_order(order.order_id)
+        print(f"Order status: {order_detail.status.value}, Filled: {order_detail.filled_quantity} @ ${order_detail.avg_fill_price:.2f}")
 
 asyncio.run(main())
 ```
@@ -127,18 +136,21 @@ asyncio.run(main())
 | Category | Endpoint | Method | Description |
 |---|---|---|---|
 | **Account** | `/api/v1/account` | GET | Retrieve cash, equity, and margin health |
+| **Account** | `/api/v1/account/setup` | POST | Configure initial equity, positions, and leverage |
+| **Account** | `/api/v1/accounts` | GET | List all active simulation passes |
 | **Positions** | `/api/v1/positions` | GET | List open long and short positions |
 | **Orders** | `/api/v1/orders` | POST | Submit market, limit, stop, or stop-limit order |
 | **Orders** | `/api/v1/orders` | GET | List active orders in book |
+| **Orders** | `/api/v1/orders/{id}` | GET | Retrieve full order details by order ID |
 | **Orders** | `/api/v1/orders/{id}` | DELETE | Cancel pending order |
 | **Trades** | `/api/v1/trades` | GET | Retrieve execution trade history |
 | **Market Data** | `/api/v1/market/bars/latest` | GET | Latest 1m OHLCV bars |
-| **Simulation** | `/api/v1/sim/start` | POST | Start continuous replay |
-| **Simulation** | `/api/v1/sim/pause` | POST | Pause replay |
-| **Simulation** | `/api/v1/sim/step` | POST | Manually step clock by 1 minute |
-| **Simulation** | `/api/v1/sim/speed` | POST | Update speed multiplier |
+| **Simulation** | `/api/v1/sim/start` | POST | Start continuous real-time replay (1.0x) |
+| **Simulation** | `/api/v1/sim/step_until` | POST | Accelerate simulation forward to target timestamp |
+| **Simulation** | `/api/v1/sim/reset` | POST | Reset playback cursor to start |
 | **Reports** | `/api/v1/reports/performance` | GET | Compute Sharpe, Drawdown, Return |
-| **Audit** | `/api/v1/reports/ledger` | GET | Retrieve audit event ledger |
+| **Reports** | `/api/v1/reports/trades/csv` | GET | Export trades as CSV |
+| **Reports** | `/api/v1/reports/save` | POST | Persist full audit session to server disk |
 
 ---
 

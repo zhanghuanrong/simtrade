@@ -60,14 +60,17 @@ async def run_bot():
     async def on_trade(trade: Trade):
         console.print(f"[bold cyan]Trade Executed:[/bold cyan] {trade.side.value} {trade.quantity} {trade.ticker} @ ${trade.price:.2f} (Comm: ${trade.commission:.2f})")
 
-    console.print("[bold yellow]Starting simulation replay at 20x speed...[/bold yellow]")
-    await client.set_speed(20.0)
-    await client.start_sim()
+    console.print("[bold yellow]Running simulation pass: advancing forward via step_until...[/bold yellow]")
+    meta = await client.get_metadata()
+    from datetime import datetime, timedelta
+    current_t = datetime.fromisoformat(meta["current_time"])
 
-    # Run for 20 seconds, streaming trades and bars
-    await asyncio.sleep(20)
+    # Step through 20 minutes of bars to let the bot trade
+    for i in range(1, 21):
+        target_t = current_t + timedelta(minutes=i)
+        await client.step_until(target_t)
+        await asyncio.sleep(0.05)
 
-    await client.pause_sim()
     perf = await client.get_performance()
     acc = await client.get_account()
 

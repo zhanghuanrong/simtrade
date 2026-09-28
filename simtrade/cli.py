@@ -22,7 +22,6 @@ console = Console()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Host interface to bind"),
     port: int = typer.Option(6688, help="Port to listen on"),
-    speed: float = typer.Option(10.0, help="Simulation playback speed multiplier (1=realtime, 60=1s/min, 0=max)"),
     tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers (or 'ALL')"),
     data_file: Optional[str] = typer.Option(None, help="Path to historical parquet or CSV file (defaults to data/1m_20260817_now.parquet if exists)"),
     data_dir: Optional[str] = typer.Option("data", help="Directory containing historical Parquet/CSV data"),
@@ -34,7 +33,7 @@ def serve(
 
     server_cfg = ServerConfig(host=host, port=port)
     sim_cfg = SimulationConfig(
-        speed_multiplier=speed,
+        speed_multiplier=1.0,
         tickers=ticker_list,
         data_file=data_file,
         data_dir=data_dir,
@@ -46,7 +45,7 @@ def serve(
     console.print(f" • Dashboard: [cyan]http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/dashboard[/cyan]")
     console.print(f" • API Docs:  [cyan]http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}/docs[/cyan]")
     console.print(f" • Tickers:   [yellow]{', '.join(ticker_list)}[/yellow]")
-    console.print(f" • Speed:     [magenta]{speed}x[/magenta]")
+    console.print(f" • Speed:     [magenta]1.0x (Real-time baseline, client-accelerated via step_until)[/magenta]")
 
     fastapi_app = create_app(
         server_config=server_cfg,

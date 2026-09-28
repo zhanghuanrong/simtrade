@@ -59,17 +59,24 @@ async def test_client_sdk_workflow(running_server):
     async def handle_trade(trade):
         received_trades.append(trade)
 
-    # 1. Step simulation
-    step_res = await client.step_sim()
-    assert step_res["status"] == "stepped"
-
-    # 2. Submit Buy order
+    # 1. Submit Buy order
     order = await client.buy("AAPL", quantity=25, order_type=OrderType.MARKET)
     assert order.status.value in ("ACCEPTED", "FILLED")
 
-    # 3. Step again to trigger fill
-    await client.step_sim()
+    # 2. Advance time using step_until to trigger fill
+    meta = await client.get_metadata()
+    from datetime import datetime, timedelta
+    current_dt = datetime.fromisoformat(meta["current_time"])
+    target_dt = current_dt + timedelta(minutes=1)
+    step_res = await client.step_until(target_dt)
+    assert step_res["status"] == "TARGET_REACHED"
     await asyncio.sleep(0.1)
+
+    # 3. Test get_order SDK method
+    order_detail = await client.get_order(order.order_id)
+    assert order_detail.order_id == order.order_id
+    assert order_detail.status.value == "FILLED"
+    assert order_detail.filled_quantity == 25.0
 
     # 4. Check account
     acc = await client.get_account()
@@ -81,12 +88,9 @@ async def test_client_sdk_workflow(running_server):
     perf = await client.get_performance()
     assert perf["total_trades"] >= 1
 
-    # 6. Test step_until SDK method
-    meta = await client.get_metadata()
-    from datetime import datetime, timedelta
-    current_dt = datetime.fromisoformat(meta["current_time"])
-    target_dt = current_dt + timedelta(minutes=3)
-    step_until_res = await client.step_until(target_dt)
+    # 6. Test further step_until acceleration
+    target_dt_2 = target_dt + timedelta(minutes=3)
+    step_until_res = await client.step_until(target_dt_2)
     assert step_until_res["status"] == "TARGET_REACHED"
     assert step_until_res["bars_processed"] == 3
 

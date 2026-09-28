@@ -174,6 +174,14 @@ class SimTradeClient:
             data = await resp.json()
             return [Order(**o) for o in data]
 
+    async def get_order(self, order_id: str) -> Order:
+        """Fetch order details (active, filled, cancelled, or rejected) by order_id."""
+        async with self._session.get(f"{self.base_url}/api/v1/orders/{order_id}") as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise ValueError(f"Failed to fetch order {order_id}: {data.get('detail')}")
+            return Order(**data)
+
     async def get_performance(self) -> Dict[str, Any]:
         """Fetch analytics report (Sharpe, max drawdown, total return)."""
         async with self._session.get(f"{self.base_url}/api/v1/reports/performance?account_id={self.account_id}") as resp:
@@ -186,15 +194,8 @@ class SimTradeClient:
             return await resp.json()
 
     async def start_sim(self):
+        """Start or resume continuous real-time playback (1.0x)."""
         async with self._session.post(f"{self.base_url}/api/v1/sim/start") as resp:
-            return await resp.json()
-
-    async def pause_sim(self):
-        async with self._session.post(f"{self.base_url}/api/v1/sim/pause") as resp:
-            return await resp.json()
-
-    async def step_sim(self) -> Dict[str, Any]:
-        async with self._session.post(f"{self.base_url}/api/v1/sim/step") as resp:
             return await resp.json()
 
     async def step_until(self, target_time: Union[str, datetime], account_id: Optional[str] = None) -> Dict[str, Any]:
@@ -219,18 +220,14 @@ class SimTradeClient:
         async with self._session.post(f"{self.base_url}/api/v1/sim/reset", json=payload) as resp:
             return await resp.json()
 
-    async def set_speed(self, speed: float):
-        async with self._session.post(f"{self.base_url}/api/v1/sim/speed", json={"speed_multiplier": speed}) as resp:
-            return await resp.json()
-
     # Account Configuration & Pass Tagging
     async def setup_account(
         self,
         account_id: Optional[str] = None,
         tag: Optional[str] = None,
-        initial_cash: float = 100_000.0,
+        initial_total_equity: float = 100_000.0,
+        initial_cash: Optional[float] = None,
         initial_positions: Optional[Dict[str, float]] = None,
-        initial_entry_prices: Optional[Dict[str, float]] = None,
         leverage: Optional[float] = None,
         initial_margin_rate: Optional[float] = None,
         maintenance_margin_rate: Optional[float] = None,
@@ -240,9 +237,9 @@ class SimTradeClient:
         payload = {
             "account_id": acc_id,
             "tag": tag or acc_id,
+            "initial_total_equity": initial_total_equity,
             "initial_cash": initial_cash,
             "initial_positions": initial_positions,
-            "initial_entry_prices": initial_entry_prices,
             "leverage": leverage,
             "initial_margin_rate": initial_margin_rate,
             "maintenance_margin_rate": maintenance_margin_rate,
