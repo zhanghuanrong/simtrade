@@ -33,7 +33,7 @@ simtrade serve [OPTIONS]
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `--host` | `str` | `0.0.0.0` | Network interface to bind. |
-| `--port` | `int` | `8000` | Port to listen on. |
+| `--port` | `int` | `6688` | Port to listen on. |
 | `--speed` | `float` | `10.0` | Playback speed multiplier (`1.0` = real-time, `60.0` = 1 simulated min per sec, `0` = MAX speed). |
 | `--tickers` | `str` | `AAPL,NVDA,TSLA,MSFT` | Comma-separated list of tickers to stream, or `ALL` to load all symbols in the dataset. |
 | `--data-file` | `str` | `None` | Explicit path to a Parquet or CSV file. Defaults to `data/1m_20260817_now.parquet` if present. |
@@ -48,16 +48,16 @@ simtrade serve [OPTIONS]
 simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10
 
 # 2. Run server with ALL 149 tickers from the parquet file at 5x speed
-simtrade serve --tickers ALL --speed 5 --port 8000
+simtrade serve --tickers ALL --speed 5 --port 6688
 
 # 3. Maximum non-blocking speed (as fast as CPU and event loop can process)
 simtrade serve --tickers AAPL,NVDA --speed 0
 ```
 
 Once running, the server provides:
-- **Web Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
-- **Interactive Swagger API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Unified WebSocket Stream**: `ws://localhost:8000/ws/unified`
+- **Web Dashboard**: [http://localhost:6688/dashboard](http://localhost:6688/dashboard)
+- **Interactive Swagger API Docs**: [http://localhost:6688/docs](http://localhost:6688/docs)
+- **Unified WebSocket Stream**: `ws://localhost:6688/ws/unified`
 
 ---
 
@@ -72,14 +72,14 @@ Once running, the server provides:
 ```python
 from simtrade.client.trader_client import SimTradeClient
 
-client = SimTradeClient(base_url="http://127.0.0.1:8000", account_id="my_bot_pass_1")
+client = SimTradeClient(base_url="http://127.0.0.1:6688", account_id="my_bot_pass_1")
 await client.connect()
 # Automatically connects HTTP session and WebSocket stream
 ```
 
 ### Connecting via curl (REST):
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/sim/status"
+curl -X GET "http://127.0.0.1:6688/api/v1/sim/status"
 ```
 
 ---
@@ -93,7 +93,7 @@ Before starting a simulation pass, clients can query the dataset's time range, t
 
 ### Example `curl`:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/sim/metadata"
+curl -X GET "http://127.0.0.1:6688/api/v1/sim/metadata"
 ```
 
 ### Example JSON Response:
@@ -176,7 +176,7 @@ print(f"Configured Account: {acc.account_id}, Equity: ${acc.equity:,.2f}, Buying
 ### Inspecting Account Health:
 To query current cash, margin used, and margin available:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/account?account_id=momentum_v1_run"
+curl -X GET "http://127.0.0.1:6688/api/v1/account?account_id=momentum_v1_run"
 ```
 Key response fields:
 - `equity`: Total portfolio liquidation value.
@@ -193,7 +193,7 @@ Key response fields:
 
 ### 1. Start Continuous Playback
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sim/start"
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/start"
 ```
 Or via SDK:
 ```python
@@ -202,7 +202,7 @@ await client.start_sim()
 
 ### 2. Pause Playback
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sim/pause"
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/pause"
 ```
 Or via SDK:
 ```python
@@ -211,7 +211,7 @@ await client.pause_sim()
 
 ### 3. Step 1 Minute Manually
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sim/step"
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/step"
 ```
 Or via SDK:
 ```python
@@ -221,7 +221,7 @@ print("Stepped to:", step_data["timestamp"])
 
 ### 4. Change Playback Speed on-the-Fly
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sim/speed" \
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/speed" \
      -H "Content-Type: application/json" \
      -d '{"speed_multiplier": 60.0}'
 ```
@@ -236,7 +236,7 @@ Check `meta['is_finished']` via `GET /api/v1/sim/metadata`. When `is_finished ==
 ### 6. Reset Simulation for a New Pass
 Rewinds the clock cursor back to the start of the Parquet dataset (or a specified start time) and clears active unfilled orders:
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sim/reset" \
+curl -X POST "http://127.0.0.1:6688/api/v1/sim/reset" \
      -H "Content-Type: application/json" \
      -d '{}'
 ```
@@ -254,7 +254,7 @@ When a simulation pass finishes (or at any time), you can export the full transa
 ### 1. Download Trades as CSV
 Directly download a CSV containing every fulfilled trade (`trade_id`, `ticker`, `side`, `price`, `quantity`, `commission`, `timestamp`):
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/reports/trades/csv?account_id=momentum_v1_run" \
+curl -X GET "http://127.0.0.1:6688/api/v1/reports/trades/csv?account_id=momentum_v1_run" \
      -o "trades_momentum_v1_run.csv"
 ```
 Or via SDK:
@@ -265,13 +265,13 @@ await client.export_trades_csv(account_id="momentum_v1_run", save_path="my_trade
 ### 2. Retrieve Quantitative Performance Report
 Computes Sharpe ratio, Sortino ratio, max drawdown, win rate, and total return:
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/v1/reports/performance?account_id=momentum_v1_run"
+curl -X GET "http://127.0.0.1:6688/api/v1/reports/performance?account_id=momentum_v1_run"
 ```
 
 ### 3. Save Complete Session to Server Disk
 Triggers the server to persist trades CSV, performance JSON, and audit ledger JSON into the `reports/` folder:
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/reports/save" \
+curl -X POST "http://127.0.0.1:6688/api/v1/reports/save" \
      -H "Content-Type: application/json" \
      -d '{"account_id": "momentum_v1_run", "output_dir": "reports"}'
 ```
@@ -289,7 +289,7 @@ await client.save_session(account_id="momentum_v1_run", output_dir="reports")
 
 ## 7. Inspecting Passes in the Web Dashboard
 
-Visit [http://localhost:8000/dashboard](http://localhost:8000/dashboard):
+Visit [http://localhost:6688/dashboard](http://localhost:6688/dashboard):
 
 1. **Pass / Account Dropdown**:
    - Located in the top header.
@@ -319,7 +319,7 @@ from simtrade.client.trader_client import SimTradeClient
 from simtrade.models.order import OrderType
 
 async def run_simulation_pass():
-    async with SimTradeClient("http://127.0.0.1:8000") as client:
+    async with SimTradeClient("http://127.0.0.1:6688") as client:
         # 1. Inspect dataset metadata
         meta = await client.get_metadata()
         print(f"Replay range: {meta['start_time']} to {meta['end_time']}")

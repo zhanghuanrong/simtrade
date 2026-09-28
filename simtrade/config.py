@@ -46,7 +46,7 @@ class SimulationConfig(BaseModel):
 class ServerConfig(BaseModel):
     """HTTP & WebSocket server configuration."""
     host: str = Field(default="0.0.0.0", description="Host address to bind")
-    port: int = Field(default=8000, ge=1024, le=65535, description="Port to listen on")
+    port: int = Field(default=6688, ge=1024, le=65535, description="Port to listen on")
     title: str = Field(default="SimTrade Paper Trading Server")
     version: str = Field(default="0.1.0")
     log_level: str = Field(default="info")

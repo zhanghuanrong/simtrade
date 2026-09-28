@@ -21,7 +21,7 @@ console = Console()
 @app.command()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Host interface to bind"),
-    port: int = typer.Option(8000, help="Port to listen on"),
+    port: int = typer.Option(6688, help="Port to listen on"),
     speed: float = typer.Option(10.0, help="Simulation playback speed multiplier (1=realtime, 60=1s/min, 0=max)"),
     tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers (or 'ALL')"),
     data_file: Optional[str] = typer.Option(None, help="Path to historical parquet or CSV file (defaults to data/1m_20260817_now.parquet if exists)"),

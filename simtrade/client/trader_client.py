@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class SimTradeClient:
     """Asynchronous client library to connect, stream, and trade with SimTrade server."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8000", account_id: str = "trader_1"):
+    def __init__(self, base_url: str = "http://127.0.0.1:6688", account_id: str = "trader_1"):
         self.base_url = base_url.rstrip("/")
         self.ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws/unified"
         self.account_id = account_id

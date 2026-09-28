@@ -72,11 +72,11 @@ uv pip install -e ".[dev]"
 ### 1. Launch Simulation Server
 ```bash
 # Start server with 4 tickers at 10x replay speed
-simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10 --port 8000
+simtrade serve --tickers AAPL,NVDA,TSLA,MSFT --speed 10 --port 6688
 ```
 Open your browser to:
-- **Web Dashboard**: [http://localhost:8000/dashboard](http://localhost:8000/dashboard)
-- **Interactive API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Web Dashboard**: [http://localhost:6688/dashboard](http://localhost:6688/dashboard)
+- **Interactive API Docs**: [http://localhost:6688/docs](http://localhost:6688/docs)
 
 ### 2. Generate Sample 1m OHLCV Data (Optional)
 ```bash
@@ -98,7 +98,7 @@ from simtrade.client.trader_client import SimTradeClient
 from simtrade.models.order import OrderType
 
 async def main():
-    async with SimTradeClient("http://localhost:8000") as client:
+    async with SimTradeClient("http://localhost:6688") as client:
         # Subscribe to market bars
         @client.on_bar
         async def on_bar(bars):

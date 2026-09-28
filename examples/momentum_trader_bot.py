@@ -14,7 +14,7 @@ console = Console()
 
 
 async def run_bot():
-    client = SimTradeClient(base_url="http://127.0.0.1:8000", account_id="trader_1")
+    client = SimTradeClient(base_url="http://127.0.0.1:6688", account_id="trader_1")
     await client.connect()
 
     price_history: Dict[str, deque] = {"AAPL": deque(maxlen=5), "NVDA": deque(maxlen=5)}
