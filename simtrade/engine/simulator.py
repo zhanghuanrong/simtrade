@@ -463,6 +463,15 @@ class Simulator:
         # 4. Save unified PassRecord to PassStore
         net_profit = round(acc.equity - acc.initial_capital, 2)
         total_ret = round((net_profit / max(1.0, acc.initial_capital)) * 100.0, 2)
+        # Collect all orders for this account (including REJECTED, CANCELLED, FILLED, ACCEPTED)
+        account_orders = [
+            o.model_dump(mode="json")
+            for o in self.matcher.all_orders.values()
+            if o.account_id == account_id
+        ]
+        account_orders.sort(key=lambda o: str(o.get("created_at") or o.get("order_id")))
+        failed_count = sum(1 for o in account_orders if o.get("status") == "REJECTED")
+
         summary = PassSummary(
             pass_id=tag,
             account_id=account_id,
@@ -477,6 +486,8 @@ class Simulator:
             realized_pnl=acc.realized_pnl,
             unrealized_pnl=acc.unrealized_pnl,
             total_trades=len(trades),
+            total_orders=len(account_orders),
+            failed_orders=failed_count,
             win_rate_pct=float(perf.get("win_rate_pct", 0.0)),
             max_drawdown_pct=float(perf.get("max_drawdown_pct", 0.0)),
             sharpe_ratio=float(perf.get("sharpe_ratio", 0.0)),
@@ -487,6 +498,7 @@ class Simulator:
             performance=perf,
             positions={t: p.model_dump(mode="json") for t, p in acc.positions.items()},
             trades=[t.model_dump(mode="json") for t in trades],
+            orders=account_orders,
             snapshots=[s.model_dump(mode="json") for s in snapshots],
             ledger_entries=ledger_entries,
         )

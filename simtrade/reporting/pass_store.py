@@ -29,6 +29,8 @@ class PassSummary(BaseModel):
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
     total_trades: int = 0
+    total_orders: int = 0
+    failed_orders: int = 0
     win_rate_pct: float = 0.0
     max_drawdown_pct: float = 0.0
     sharpe_ratio: float = 0.0
@@ -41,8 +43,48 @@ class PassRecord(BaseModel):
     performance: Dict[str, Any] = Field(default_factory=dict)
     positions: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     trades: List[Dict[str, Any]] = Field(default_factory=list)
+    orders: List[Dict[str, Any]] = Field(default_factory=list)
     snapshots: List[Dict[str, Any]] = Field(default_factory=list)
     ledger_entries: List[Dict[str, Any]] = Field(default_factory=list)
+
+    def get_orders(self) -> List[Dict[str, Any]]:
+        """Return stored orders, or reconstruct from ledger entries if orders was empty."""
+        if self.orders:
+            return self.orders
+        reconstructed: Dict[str, Dict[str, Any]] = {}
+        for e in self.ledger_entries:
+            etype = e.get("event_type")
+            details = e.get("details") or {}
+            oid = details.get("order_id")
+            if not oid:
+                continue
+            if oid not in reconstructed:
+                reconstructed[oid] = {
+                    "order_id": oid,
+                    "account_id": e.get("account_id"),
+                    "ticker": details.get("ticker", ""),
+                    "side": details.get("side", "BUY"),
+                    "order_type": details.get("type", "MARKET"),
+                    "quantity": float(details.get("quantity", 0.0) or 0.0),
+                    "filled_quantity": 0.0,
+                    "limit_price": details.get("limit_price"),
+                    "status": "ACCEPTED",
+                    "created_at": e.get("sim_time"),
+                    "reject_reason": None,
+                }
+            item = reconstructed[oid]
+            if etype == "ORDER_REJECTED":
+                item["status"] = "REJECTED"
+                item["reject_reason"] = details.get("reason")
+            elif etype == "ORDER_CANCELLED":
+                if item["status"] != "FILLED":
+                    item["status"] = "CANCELLED"
+            elif etype in ("ORDER_FILLED", "ORDER_PARTIALLY_FILLED"):
+                item["status"] = "FILLED" if etype == "ORDER_FILLED" else "PARTIALLY_FILLED"
+                item["filled_quantity"] = item.get("filled_quantity", 0.0) + float(details.get("quantity", 0.0) or 0.0)
+                if not item["ticker"]:
+                    item["ticker"] = details.get("ticker", "")
+        return list(reconstructed.values())
 
 
 class PassStore:

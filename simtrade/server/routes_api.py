@@ -35,6 +35,13 @@ def get_account(account_id: str = "trader_1"):
     return sim.account_mgr.get_or_create_account(account_id)
 
 
+@api_router.get("/accounts", response_model=List[Any], tags=["Account"])
+def list_active_accounts():
+    """List summaries of active in-memory accounts with real-time valuation."""
+    sim = get_simulator()
+    return sim.account_mgr.list_accounts()
+
+
 @api_router.get("/account/snapshots", response_model=List[AccountSnapshot], tags=["Account"])
 def get_account_snapshots(account_id: str = "trader_1"):
     """Get historical equity and portfolio snapshots for an active account."""
@@ -71,6 +78,20 @@ def list_active_orders(account_id: Optional[str] = None):
     if account_id:
         orders = [o for o in orders if o.account_id == account_id]
     return orders
+
+
+@api_router.get("/orders/history", response_model=List[Order], tags=["Orders"])
+def list_orders_history(account_id: Optional[str] = None, status: Optional[str] = None, limit: int = 2000):
+    """List full order history (all active, filled, cancelled, and rejected/failed orders)."""
+    sim = get_simulator()
+    orders = list(sim.matcher.all_orders.values())
+    if account_id:
+        orders = [o for o in orders if o.account_id == account_id]
+    if status:
+        stat_upper = status.upper()
+        orders = [o for o in orders if o.status.value.upper() == stat_upper]
+    orders.sort(key=lambda o: (o.created_at, o.order_id))
+    return orders[-limit:]
 
 
 @api_router.get("/orders/{order_id}", response_model=Order, tags=["Orders"])
@@ -282,6 +303,8 @@ def get_simulation_pass(pass_id: str):
     record = sim.pass_store.get_pass(pass_id)
     if not record:
         raise HTTPException(status_code=404, detail=f"Pass '{pass_id}' not found")
+    if not record.orders:
+        record.orders = record.get_orders()
     return record
 
 
