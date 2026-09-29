@@ -11,7 +11,6 @@ set -euo pipefail
 PORT="${PORT:-6688}"
 HOST="${HOST:-0.0.0.0}"
 TICKERS="${TICKERS:-ALL}"
-LEVERAGE="${LEVERAGE:-3.0}"
 DATA_FILE="${DATA_FILE:-}"
 
 # Check Python environment
@@ -34,12 +33,11 @@ echo "=================================================================="
 echo "Host:          ${HOST}"
 echo "Port:          ${PORT}"
 echo "Tickers:       ${TICKERS}"
-echo "Max Leverage:  ${LEVERAGE}x"
 echo "Dashboard:     http://${DASHBOARD_HOST}:${PORT}/dashboard"
 echo "API Docs:      http://${DASHBOARD_HOST}:${PORT}/docs"
 echo "=================================================================="
 
-SERVE_ARGS=(serve --host "${HOST}" --port "${PORT}" --tickers "${TICKERS}" --leverage "${LEVERAGE}")
+SERVE_ARGS=(serve --host "${HOST}" --port "${PORT}" --tickers "${TICKERS}")
 if [ -n "${DATA_FILE}" ]; then
     SERVE_ARGS+=(--data-file "${DATA_FILE}")
 fi

@@ -25,6 +25,7 @@ async def run_fake_trading(
     tag: str = "e2e_history_replay",
     export_csv: Optional[str] = None,
     reports_dir: str = "reports",
+    leverage: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Connect to SimTrade server and replay trading events from a history JSON file.
@@ -41,10 +42,13 @@ async def run_fake_trading(
     events: List[Dict[str, Any]] = history_data.get("events", [])
     account_cfg = history_data.get("account_configuration", {})
     init_capital = float(account_cfg.get("initial_capital", 100_000.0))
-    leverage = float(account_cfg.get("max_intraday_leverage", 2.0))
+    if leverage is not None:
+        pass_leverage = float(leverage)
+    else:
+        pass_leverage = float(account_cfg.get("max_intraday_leverage", 2.0))
 
     logger.info(f"Loaded {len(events)} events from {history_file}")
-    logger.info(f"Account config: capital=${init_capital:,.2f}, leverage={leverage}x")
+    logger.info(f"Account config: capital=${init_capital:,.2f}, leverage={pass_leverage}x")
 
     # Pre-build lookup for order shares from fills / other events
     order_to_shares: Dict[str, float] = {}
@@ -81,7 +85,7 @@ async def run_fake_trading(
             account_id=account_id,
             tag=tag,
             initial_total_equity=init_capital,
-            leverage=leverage,
+            leverage=pass_leverage,
         )
         logger.info(f"Account initialized: Equity=${account.equity:,.2f}, Cash=${account.cash:,.2f}")
 
@@ -291,6 +295,12 @@ def main():
         default="reports",
         help="Directory to save simulation reports (default: reports)",
     )
+    parser.add_argument(
+        "--leverage",
+        type=float,
+        default=None,
+        help="Optional leverage override for this pass (defaults to history JSON config)",
+    )
 
     args = parser.parse_args()
 
@@ -303,6 +313,7 @@ def main():
                 tag=args.tag,
                 export_csv=args.export_csv,
                 reports_dir=args.reports_dir,
+                leverage=args.leverage,
             )
         )
         sys.exit(0 if summary["status"] == "COMPLETED" else 1)

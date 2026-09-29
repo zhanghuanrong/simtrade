@@ -25,8 +25,6 @@ def serve(
     tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers (or 'ALL')"),
     data_file: Optional[str] = typer.Option(None, help="Path to historical parquet or CSV file (defaults to data/1m_20260817_now.parquet if exists)"),
     data_dir: Optional[str] = typer.Option("data", help="Directory containing historical Parquet/CSV data"),
-    leverage: float = typer.Option(3.0, help="Max leverage allowed"),
-    maint_margin: float = typer.Option(0.25, help="Maintenance margin rate (e.g. 0.25 for 25%)"),
 ):
     """Start the SimTrade paper trading server with WebSocket, REST API, and web dashboard."""
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
@@ -38,13 +36,7 @@ def serve(
         data_file=data_file,
         data_dir=data_dir,
     )
-    init_margin = round(1.0 / leverage, 4) if leverage > 0 else 0.3333
-    margin_cfg = MarginConfig(
-        max_leverage=leverage,
-        initial_margin_rate=init_margin,
-        short_initial_margin_rate=init_margin,
-        maintenance_margin_rate=maint_margin,
-    )
+    margin_cfg = MarginConfig()
     matching_cfg = MatchingConfig()
 
     console.print(f"[bold green]Starting SimTrade Paper Trading Server[/bold green]")

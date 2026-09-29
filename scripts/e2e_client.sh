@@ -13,6 +13,7 @@ HOST="${HOST:-127.0.0.1}"
 HISTORY_FILE="${1:-data/test_checker_trading_history.json}"
 ACCOUNT_ID="${2:-fake_e2e_pass}"
 TAG="${3:-checker_replay}"
+LEVERAGE="${LEVERAGE:-}"
 OUTPUT_DIR="${OUTPUT_DIR:-reports}"
 CSV_EXPORT="${OUTPUT_DIR}/e2e_trades_${ACCOUNT_ID}.csv"
 
@@ -26,6 +27,9 @@ echo "=================================================================="
 echo "Server URL:    ${SERVER_URL}"
 echo "History File:  ${HISTORY_FILE}"
 echo "Account ID:    ${ACCOUNT_ID} (Tag: ${TAG})"
+if [ -n "${LEVERAGE}" ]; then
+echo "Pass Leverage: ${LEVERAGE}x (CLI Override)"
+fi
 echo "CSV Export:    ${CSV_EXPORT}"
 echo "Reports Dir:   ${OUTPUT_DIR}"
 echo "=================================================================="
@@ -60,10 +64,17 @@ fi
 echo "Connected successfully to SimTrade server!"
 echo "Executing paper trading history replay..."
 
-exec ${PYTHON_CMD} -m simtrade.client.e2e_fake_trading_client \
-    --server "${SERVER_URL}" \
-    --history "${HISTORY_FILE}" \
-    --account-id "${ACCOUNT_ID}" \
-    --tag "${TAG}" \
-    --export-csv "${CSV_EXPORT}" \
+CLIENT_ARGS=(
+    --server "${SERVER_URL}"
+    --history "${HISTORY_FILE}"
+    --account-id "${ACCOUNT_ID}"
+    --tag "${TAG}"
+    --export-csv "${CSV_EXPORT}"
     --reports-dir "${OUTPUT_DIR}"
+)
+
+if [ -n "${LEVERAGE}" ]; then
+    CLIENT_ARGS+=(--leverage "${LEVERAGE}")
+fi
+
+exec ${PYTHON_CMD} -m simtrade.client.e2e_fake_trading_client "${CLIENT_ARGS[@]}"
