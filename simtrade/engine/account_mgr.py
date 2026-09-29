@@ -118,9 +118,12 @@ class AccountManager:
         if not valid:
             return False, reason
 
-        # For buy limit orders, optionally reserve cash to prevent overselling liquid capital
+        # For buy limit orders, reserve margin equity to prevent overselling liquid capital
         if order.side == OrderSide.BUY and order.order_type == OrderType.LIMIT and order.limit_price:
-            reserved_amount = order.quantity * order.limit_price * self.margin_engine.config.initial_margin_rate
+            cfg = account.custom_margin_config or {}
+            init_rate = cfg.get("initial_margin_rate", self.margin_engine.config.initial_margin_rate)
+            reserved_amount = order.quantity * order.limit_price * init_rate
+            order.reserved_frozen_cash = reserved_amount
             account.frozen_cash += reserved_amount
 
         return True, None
@@ -128,8 +131,13 @@ class AccountManager:
     def release_reserved_for_order(self, account_id: str, order: Order):
         """Release any frozen cash when an order is filled, cancelled, or rejected."""
         account = self.get_or_create_account(account_id)
-        if order.side == OrderSide.BUY and order.limit_price:
-            reserved_amount = order.quantity * order.limit_price * self.margin_engine.config.initial_margin_rate
+        if hasattr(order, "reserved_frozen_cash") and order.reserved_frozen_cash > 0:
+            account.frozen_cash = max(0.0, account.frozen_cash - order.reserved_frozen_cash)
+            order.reserved_frozen_cash = 0.0
+        elif order.side == OrderSide.BUY and order.limit_price:
+            cfg = account.custom_margin_config or {}
+            init_rate = cfg.get("initial_margin_rate", self.margin_engine.config.initial_margin_rate)
+            reserved_amount = order.quantity * order.limit_price * init_rate
             account.frozen_cash = max(0.0, account.frozen_cash - reserved_amount)
 
     def process_trade(self, trade: Trade) -> Account:

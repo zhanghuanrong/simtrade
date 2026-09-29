@@ -57,9 +57,9 @@ class MarginEngine:
         margin_excess = round(equity - total_maint_req, 4)
 
         # Buying power calculation:
-        # Uncommitted equity available for new positions = max(0, equity - total_init_req)
+        # Uncommitted equity available for new positions = max(0, equity - total_init_req - account.frozen_cash)
         # Buying power = uncommitted equity / initial_margin_rate
-        uncommitted_equity = max(0.0, equity - total_init_req)
+        uncommitted_equity = max(0.0, equity - total_init_req - account.frozen_cash)
         buying_power = round(uncommitted_equity / init_rate, 4)
 
         # Current leverage
@@ -119,16 +119,20 @@ class MarginEngine:
                 is_opening = True
 
         if is_opening:
-            # Margin requirement for this new order
-            req_rate = self.config.initial_margin_rate if order.side == OrderSide.BUY else self.config.short_initial_margin_rate
+            # Margin requirement for this new order respecting account custom config
+            cfg = account.custom_margin_config or {}
+            init_rate = cfg.get("initial_margin_rate", self.config.initial_margin_rate)
+            short_init_rate = cfg.get("short_initial_margin_rate", self.config.short_initial_margin_rate)
+            req_rate = init_rate if order.side == OrderSide.BUY else short_init_rate
             required_margin = notional * req_rate
 
             # Available uncommitted equity considering frozen cash
-            available_equity = account.equity - account.margin.initial_margin_requirement - account.frozen_cash
+            available_equity = max(0.0, account.equity - account.margin.initial_margin_requirement - account.frozen_cash)
+            max_bp = round(available_equity / req_rate, 2)
             if available_equity < required_margin:
                 return False, (
                     f"Insufficient margin: Required initial margin ${required_margin:.2f}, "
-                    f"available margin ${available_equity:.2f} (Max Buying Power: ${account.margin.buying_power:.2f})"
+                    f"available margin ${available_equity:.2f} (Max Buying Power: ${max_bp:.2f})"
                 )
 
         return True, None

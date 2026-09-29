@@ -14,7 +14,7 @@ from simtrade.engine.margin import MarginEngine
 from simtrade.engine.matcher import MatchingEngine
 from simtrade.models.account import Account
 from simtrade.models.market_data import Bar
-from simtrade.models.order import Order, OrderCreate, OrderStatus
+from simtrade.models.order import Order, OrderCreate, OrderSide, OrderStatus, OrderType
 from simtrade.models.trade import Trade
 from simtrade.reporting.ledger import EventLedger
 from simtrade.reporting.pass_store import PassRecord, PassStore, PassSummary
@@ -103,7 +103,15 @@ class Simulator:
             if not latest_bar and self.feeder.timeline:
                 first_bars = self.feeder.get_bars_for_time(self.feeder.timeline[0])
                 latest_bar = first_bars.get(order.ticker)
-        est_price = order.limit_price or (latest_bar.close if latest_bar else 100.0)
+        if latest_bar:
+            if order.order_type == OrderType.MARKET:
+                est_price = latest_bar.open
+            elif order.order_type == OrderType.LIMIT and order.limit_price:
+                est_price = min(order.limit_price, latest_bar.open) if order.side == OrderSide.BUY else max(order.limit_price, latest_bar.open)
+            else:
+                est_price = order.limit_price or latest_bar.close
+        else:
+            est_price = order.limit_price or 100.0
 
         # Validate with risk & margin engine
         valid, reject_reason = self.account_mgr.reserve_for_order(account_id, order, est_price)
@@ -128,6 +136,43 @@ class Simulator:
             "type": order.order_type.value,
             "limit_price": order.limit_price,
         })
+
+        # If current minute bar is available, match immediately (continuous matching)
+        active_bar = self.latest_bars.get(order.ticker)
+        if not active_bar and hasattr(self, "feeder") and self.feeder:
+            cur_bars = self.feeder.get_bars_for_time(self.clock.current_time)
+            active_bar = cur_bars.get(order.ticker)
+            if active_bar:
+                self.latest_bars[order.ticker] = active_bar
+
+        if active_bar:
+            match = self.matcher.match_single_order(order, active_bar)
+            if match:
+                ord_matched, trade = match
+                self.all_trades.append(trade)
+                self.account_mgr.process_trade(trade)
+                self.account_mgr.release_reserved_for_order(trade.account_id, ord_matched)
+                self.ledger.record(
+                    "ORDER_FILLED" if ord_matched.status == OrderStatus.FILLED else "ORDER_PARTIALLY_FILLED",
+                    trade.account_id,
+                    self.clock.current_time,
+                    {
+                        "order_id": ord_matched.order_id,
+                        "trade_id": trade.trade_id,
+                        "ticker": trade.ticker,
+                        "price": trade.price,
+                        "quantity": trade.quantity,
+                        "commission": trade.commission,
+                    },
+                )
+                try:
+                    import asyncio
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._broadcast("ORDER_UPDATE", ord_matched.model_dump(mode="json")))
+                    loop.create_task(self._broadcast("TRADE_EXECUTION", trade.model_dump(mode="json")))
+                except RuntimeError:
+                    pass
+
         return order
 
     def cancel_order(self, order_id: str, account_id: str = "trader_1") -> Optional[Order]:
@@ -253,28 +298,22 @@ class Simulator:
                 "bars": {},
             }
 
-        # 2. Find timeline bars strictly between current_ts and target_ts
-        bars_to_step: List[datetime] = []
-        if self.feeder.timeline:
-            for t in self.feeder.timeline:
-                norm_t = normalize_ts(t)
-                if current_ts < norm_t <= target_ts:
-                    bars_to_step.append(t)
-                elif norm_t > target_ts:
-                    break
-        else:
-            # Synthetic generation mode: step minute by minute up to target_ts
-            step_dt = current_ts + self.clock.interval
-            while step_dt <= target_ts:
-                bars_to_step.append(step_dt)
-                step_dt += self.clock.interval
-
         all_new_trades: List[Dict[str, Any]] = []
         total_bars_processed = 0
         last_bars_payload: Dict[str, Any] = {}
 
-        # 3. Process each historical bar in range
-        for _ in bars_to_step:
+        # 2. Advance step-by-step until virtual time reaches target_ts
+        while True:
+            if self.feeder.timeline:
+                if self.clock.cursor >= len(self.feeder.timeline):
+                    break
+                next_bar_time = normalize_ts(self.feeder.timeline[self.clock.cursor])
+                if next_bar_time > target_ts:
+                    break
+            else:
+                if normalize_ts(self.clock.current_time) >= target_ts:
+                    break
+
             step_result = await self.step()
             total_bars_processed += 1
             last_bars_payload = step_result.get("bars", {})
@@ -364,14 +403,15 @@ class Simulator:
         """Reset simulation playback cursor to start a fresh simulation pass."""
         self.pause()
         if self.feeder.timeline:
-            self.clock.cursor = 0
+            idx = 0
             if start_time:
                 # Find index closest to start_time
-                for idx, t in enumerate(self.feeder.timeline):
+                for i, t in enumerate(self.feeder.timeline):
                     if t >= start_time:
-                        self.clock.cursor = idx
+                        idx = i
                         break
-            self.clock.current_time = self.feeder.timeline[self.clock.cursor]
+            self.clock.current_time = self.feeder.timeline[idx]
+            self.clock.cursor = idx
         elif start_time:
             self.clock.current_time = start_time
         else:
@@ -380,6 +420,9 @@ class Simulator:
         self.clock.step_count = 0
         self.matcher.active_orders.clear()
         self.latest_bars.clear()
+        # Seed initial market bar prices at reset time
+        bars = self.feeder.get_bars_for_time(self.clock.current_time)
+        self.latest_bars.update(bars)
         logger.info(f"Simulator reset to time {self.clock.current_time}")
 
     def get_metadata(self) -> Dict[str, Any]:

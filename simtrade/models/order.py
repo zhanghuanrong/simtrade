@@ -74,6 +74,7 @@ class Order(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     reject_reason: Optional[str] = None
+    reserved_frozen_cash: float = 0.0
 
     def model_post_init(self, __context):
         if self.remaining_quantity == 0.0 and self.filled_quantity == 0.0:

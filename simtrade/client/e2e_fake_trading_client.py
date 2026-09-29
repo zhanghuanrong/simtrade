@@ -164,8 +164,8 @@ async def run_fake_trading(
                     if limit_price is not None:
                         limit_price = float(limit_price)
 
-                    # Treat orders with limit_price as LIMIT orders to respect caps
-                    if raw_otype == "LIMIT" or (limit_price is not None and etype == "ORDER_PLACED"):
+                    # Preserve original order type (MARKET or LIMIT) while passing limit_price as slippage/anti-chase cap
+                    if raw_otype == "LIMIT":
                         otype = OrderType.LIMIT
                     else:
                         otype = OrderType.MARKET
