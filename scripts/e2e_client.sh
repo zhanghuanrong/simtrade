@@ -13,7 +13,7 @@ HOST="${HOST:-127.0.0.1}"
 HISTORY_FILE="${1:-data/test_checker_trading_history.json}"
 ACCOUNT_ID="${2:-fake_e2e_pass}"
 TAG="${3:-checker_replay}"
-LEVERAGE="${LEVERAGE:-}"
+LEVERAGE="${LEVERAGE:-2.0}"
 OUTPUT_DIR="${OUTPUT_DIR:-reports}"
 CSV_EXPORT="${OUTPUT_DIR}/e2e_trades_${ACCOUNT_ID}.csv"
 

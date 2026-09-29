@@ -339,8 +339,8 @@ def main():
     parser.add_argument(
         "--leverage",
         type=float,
-        default=None,
-        help="Optional leverage override for this pass (defaults to history JSON config)",
+        default=2.0,
+        help="Leverage override for this pass (default: 2.0)",
     )
 
     args = parser.parse_args()

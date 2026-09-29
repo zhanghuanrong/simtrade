@@ -6,14 +6,14 @@ from pydantic import BaseModel, Field
 
 class MarginConfig(BaseModel):
     """Margin and risk management configuration."""
-    # Leverage multiplier (e.g. 3.0 = 33.33% initial margin, 4.0 = 25% initial margin)
-    max_leverage: float = Field(default=3.0, ge=1.0, description="Maximum permitted leverage")
-    initial_margin_rate: float = Field(default=0.3333, ge=0.01, le=1.0, description="Initial margin requirement (e.g. 0.3333 for 33.33%)")
+    # Leverage multiplier (e.g. 2.0 = 50% initial margin, 4.0 = 25% initial margin)
+    max_leverage: float = Field(default=2.0, ge=1.0, description="Maximum permitted leverage")
+    initial_margin_rate: float = Field(default=0.50, ge=0.01, le=1.0, description="Initial margin requirement (e.g. 0.50 for 50%)")
     maintenance_margin_rate: float = Field(default=0.25, ge=0.01, le=1.0, description="Maintenance margin threshold (e.g. 0.25 for 25%)")
     
     # Short selling policies
     allow_short: bool = Field(default=True, description="Whether short selling is allowed")
-    short_initial_margin_rate: float = Field(default=0.3333, ge=0.01, le=1.0, description="Initial margin required for short positions")
+    short_initial_margin_rate: float = Field(default=0.50, ge=0.01, le=1.0, description="Initial margin required for short positions")
     short_maintenance_margin_rate: float = Field(default=0.30, ge=0.01, le=1.0, description="Maintenance margin required for short positions")
     annual_borrow_fee_rate: float = Field(default=0.03, ge=0.0, description="Annual borrow fee on shorted market value")
     annual_margin_interest_rate: float = Field(default=0.06, ge=0.0, description="Annual interest charged on margin cash debit")
