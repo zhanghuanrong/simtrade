@@ -297,46 +297,46 @@
 
   <!-- Key Metrics Row (Account Status & Margin Health) -->
   <div class="stats-grid">
-    <!-- Equity -->
+    <!-- 1. Total Cash -->
+    <div class="stat-card">
+      <div class="stat-label">Total Cash</div>
+      <div id="stat-total-cash" class="stat-val" style="color:var(--accent-blue);">$0.00</div>
+      <div id="stat-frozen-cash" class="stat-sub">Liquid: $0.00 | Frozen: $0.00</div>
+    </div>
+
+    <!-- 2. Total Position -->
+    <div class="stat-card">
+      <div class="stat-label">Total Position</div>
+      <div id="stat-total-position" class="stat-val">$0.00</div>
+      <div id="stat-position-details" class="stat-sub">0 Open Positions</div>
+    </div>
+
+    <!-- 3. Total Margin Used -->
+    <div class="stat-card">
+      <div class="stat-label">Total Margin Used</div>
+      <div id="stat-margin-used" class="stat-val" style="color:var(--accent-amber);">$0.00</div>
+      <div id="stat-margin-reqs" class="stat-sub">Init: $0.00 | Maint: $0.00</div>
+    </div>
+
+    <!-- 4. Total Margin Available -->
+    <div class="stat-card">
+      <div class="stat-label">Total Margin Available</div>
+      <div id="stat-margin-available" class="stat-val" style="color:var(--accent-green);">$0.00</div>
+      <div id="stat-margin-excess" class="stat-sub">Uncommitted Margin Equity</div>
+    </div>
+
+    <!-- 5. Buying Power -->
+    <div class="stat-card">
+      <div class="stat-label">Buying Power</div>
+      <div id="stat-buying-power" class="stat-val" style="color:var(--accent-green);">$0.00</div>
+      <div id="stat-buying-power-sub" class="stat-sub">Max Purchasing Capacity</div>
+    </div>
+
+    <!-- 6. Total Equity -->
     <div class="stat-card">
       <div class="stat-label">Total Equity</div>
       <div id="stat-equity" class="stat-val">$0.00</div>
-      <div id="stat-initial-cap" class="stat-sub">Starting: $100,000.00</div>
-    </div>
-
-    <!-- Net Profit & Return -->
-    <div class="stat-card">
-      <div class="stat-label">Net Profit / Return</div>
-      <div id="stat-profit" class="stat-val">$0.00</div>
-      <div id="stat-return" class="stat-sub">Return: 0.00%</div>
-    </div>
-
-    <!-- Cash & Reserved Cash -->
-    <div class="stat-card">
-      <div class="stat-label">Cash & Liquidity</div>
-      <div id="stat-cash" class="stat-val">$0.00</div>
-      <div id="stat-frozen-cash" class="stat-sub">Frozen / Reserved: $0.00</div>
-    </div>
-
-    <!-- Leverage & Margin Used -->
-    <div class="stat-card">
-      <div class="stat-label">Leverage & Margin Req</div>
-      <div id="stat-leverage" class="stat-val">1.00x</div>
-      <div id="stat-margin-used" class="stat-sub">Init Margin: $0.00 (Maint: $0.00)</div>
-    </div>
-
-    <!-- Buying Power & Available Margin -->
-    <div class="stat-card">
-      <div class="stat-label">Buying Power</div>
-      <div id="stat-buying-power" class="stat-val">$0.00</div>
-      <div id="stat-available-margin" class="stat-sub">Available Margin: $0.00</div>
-    </div>
-
-    <!-- Orders & Failed Orders -->
-    <div class="stat-card">
-      <div class="stat-label">Orders Submitted / Failed</div>
-      <div id="stat-orders-summary" class="stat-val">0</div>
-      <div id="stat-failed-summary" class="stat-sub">0 Rejected / Failed</div>
+      <div id="stat-profit-sub" class="stat-sub">Net Profit: $0.00 (0.00%)</div>
     </div>
   </div>
 
@@ -687,17 +687,38 @@
           healthBadge.textContent = 'HEALTHY';
         }
 
-        // Metrics
+        // Metrics calculation
+        const positions = acc.positions || {};
+        let totalPosVal = margin.gross_market_value || 0.0;
+        let totalLong = margin.total_long_value || 0.0;
+        let totalShort = margin.total_short_value || 0.0;
+        if (!totalPosVal && positions) {
+          for (const p of Object.values(positions)) {
+            const mv = Math.abs((p.quantity || 0) * (p.current_price || p.avg_entry_price || 0));
+            totalPosVal += mv;
+            if (p.quantity > 0) totalLong += mv;
+            else if (p.quantity < 0) totalShort += mv;
+          }
+        }
+        const availMargin = Math.max(0.0, acc.equity - (margin.initial_margin_requirement || 0) - (acc.frozen_cash || 0));
+        const bp = margin.buying_power !== undefined && margin.buying_power > 0 ? margin.buying_power : availMargin * 2.0;
+
         updateAccountMetricsDisplay({
+          cash: acc.cash,
+          frozen_cash: acc.frozen_cash || 0.0,
+          total_position_val: totalPosVal,
+          total_long: totalLong,
+          total_short: totalShort,
+          positions_count: Object.keys(positions).length,
+          initial_margin_req: margin.initial_margin_requirement || 0.0,
+          maint_margin_req: margin.maintenance_margin_requirement || 0.0,
+          available_margin: availMargin,
+          buying_power: bp,
           equity: acc.equity,
           initial_capital: acc.initial_capital,
           net_profit: acc.equity - acc.initial_capital,
-          cash: acc.cash,
-          frozen_cash: acc.frozen_cash || 0.0,
           leverage: margin.leverage || 1.0,
-          initial_margin_req: margin.initial_margin_requirement || 0.0,
-          maint_margin_req: margin.maintenance_margin_requirement || 0.0,
-          buying_power: margin.buying_power || 0.0,
+          leverage_limit: 2.0,
           total_orders: orders.length,
           failed_orders: failedCount,
         });
@@ -751,17 +772,40 @@
         healthBadge.className = 'badge badge-success';
         healthBadge.textContent = 'PASS COMPLETED';
 
+        // Position & Margin calculations for finished pass
+        const positions = rec.positions || {};
+        let totalPosVal = 0.0;
+        let totalLong = 0.0;
+        let totalShort = 0.0;
+        for (const p of Object.values(positions)) {
+          const mv = Math.abs((p.quantity || 0) * (p.current_price || p.avg_entry_price || 0));
+          totalPosVal += mv;
+          if (p.quantity > 0) totalLong += mv;
+          else if (p.quantity < 0) totalShort += mv;
+        }
+        const initMarginReq = totalPosVal * 0.50; // 2.0x leverage = 50%
+        const maintMarginReq = totalPosVal * 0.25; // 25% maint
+        const availMargin = Math.max(0.0, s.ending_equity - initMarginReq);
+        const bp = availMargin * 2.0;
+        const lev = totalPosVal > 0 ? (totalPosVal / Math.max(1.0, s.ending_equity)) : 0.0;
+
         // Metrics
         updateAccountMetricsDisplay({
+          cash: s.cash,
+          frozen_cash: 0.0,
+          total_position_val: totalPosVal,
+          total_long: totalLong,
+          total_short: totalShort,
+          positions_count: Object.keys(positions).length,
+          initial_margin_req: initMarginReq,
+          maint_margin_req: maintMarginReq,
+          available_margin: availMargin,
+          buying_power: bp,
           equity: s.ending_equity,
           initial_capital: s.initial_capital,
           net_profit: s.net_profit,
-          cash: s.cash,
-          frozen_cash: 0.0,
-          leverage: (rec.snapshots && rec.snapshots.length > 0) ? (rec.snapshots[rec.snapshots.length - 1].leverage || 1.0) : 1.0,
-          initial_margin_req: 0.0,
-          maint_margin_req: 0.0,
-          buying_power: s.cash * 2.0,
+          leverage: lev,
+          leverage_limit: 2.0,
           total_orders: currentOrdersList.length,
           failed_orders: failedCount,
         });
@@ -785,31 +829,36 @@
     }
 
     function updateAccountMetricsDisplay(m) {
-      document.getElementById('stat-equity').textContent = '$' + m.equity.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      document.getElementById('stat-initial-cap').textContent = `Starting: $${m.initial_capital.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+      // 1. Total Cash
+      document.getElementById('stat-total-cash').textContent = '$' + parseFloat(m.cash || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const liquidCash = Math.max(0.0, (m.cash || 0) - (m.frozen_cash || 0));
+      document.getElementById('stat-frozen-cash').textContent = `Liquid: $${liquidCash.toLocaleString(undefined, {minimumFractionDigits: 2})} | Frozen: $${parseFloat(m.frozen_cash || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-      const profitSign = m.net_profit >= 0 ? '+' : '';
-      const profitEl = document.getElementById('stat-profit');
-      profitEl.textContent = `${profitSign}$${m.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-      profitEl.className = 'stat-val ' + (m.net_profit >= 0 ? 'positive' : 'negative');
-      const retPct = (m.net_profit / Math.max(1.0, m.initial_capital)) * 100.0;
-      document.getElementById('stat-return').textContent = `Total Return: ${profitSign}${retPct.toFixed(2)}%`;
+      // 2. Total Position
+      document.getElementById('stat-total-position').textContent = '$' + parseFloat(m.total_position_val || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('stat-position-details').textContent = `${m.positions_count || 0} Open Positions (Long: $${parseFloat(m.total_long || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} | Short: $${parseFloat(m.total_short || 0).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
 
-      document.getElementById('stat-cash').textContent = '$' + m.cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      document.getElementById('stat-frozen-cash').textContent = `Frozen / Reserved: $${m.frozen_cash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+      // 3. Total Margin Used
+      document.getElementById('stat-margin-used').textContent = '$' + parseFloat(m.initial_margin_req || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('stat-margin-reqs').textContent = `Init (50%): $${parseFloat(m.initial_margin_req || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} | Maint: $${parseFloat(m.maint_margin_req || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-      document.getElementById('stat-leverage').textContent = `${parseFloat(m.leverage || 1.0).toFixed(2)}x`;
-      document.getElementById('stat-margin-used').textContent = `Init Margin: $${parseFloat(m.initial_margin_req || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} (Maint: $${parseFloat(m.maint_margin_req || 0).toLocaleString(undefined, {minimumFractionDigits: 2})})`;
+      // 4. Total Margin Available
+      const availMargin = parseFloat(m.available_margin !== undefined ? m.available_margin : Math.max(0.0, (m.equity || 0) - (m.initial_margin_req || 0) - (m.frozen_cash || 0)));
+      document.getElementById('stat-margin-available').textContent = '$' + availMargin.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('stat-margin-excess').textContent = `Uncommitted Margin (Leverage: ${parseFloat(m.leverage || 0).toFixed(2)}x)`;
 
-      document.getElementById('stat-buying-power').textContent = '$' + parseFloat(m.buying_power || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-      const availMargin = Math.max(0.0, m.equity - m.initial_margin_req - m.frozen_cash);
-      document.getElementById('stat-available-margin').textContent = `Available Margin: $${availMargin.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+      // 5. Buying Power
+      const bp = parseFloat(m.buying_power !== undefined ? m.buying_power : availMargin * 2.0);
+      document.getElementById('stat-buying-power').textContent = '$' + bp.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('stat-buying-power-sub').textContent = `Max Purchasing Capacity (${parseFloat(m.leverage_limit || 2.0).toFixed(1)}x)`;
 
-      document.getElementById('stat-orders-summary').textContent = m.total_orders;
-      const failedEl = document.getElementById('stat-failed-summary');
-      failedEl.textContent = `${m.failed_orders} Rejected / Failed`;
-      failedEl.className = m.failed_orders > 0 ? 'stat-sub negative' : 'stat-sub';
-      if (m.failed_orders > 0) failedEl.style.fontWeight = '700';
+      // 6. Total Equity
+      document.getElementById('stat-equity').textContent = '$' + parseFloat(m.equity || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const profitSign = (m.net_profit || 0) >= 0 ? '+' : '';
+      const retPct = ((m.net_profit || 0) / Math.max(1.0, (m.initial_capital || 100000))) * 100.0;
+      const profitEl = document.getElementById('stat-profit-sub');
+      profitEl.textContent = `Net Profit: ${profitSign}$${parseFloat(m.net_profit || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} (${profitSign}${retPct.toFixed(2)}%)`;
+      profitEl.className = 'stat-sub ' + ((m.net_profit || 0) >= 0 ? 'positive' : 'negative');
     }
 
     function updateChartSnapshots(snapshots, initCap, endingEq) {
@@ -1020,17 +1069,18 @@
       document.getElementById('chart-pass-label').textContent = 'No Account / Pass Selected';
       document.getElementById('chart-date-range').textContent = 'Select an account or pass above';
 
-      document.getElementById('stat-equity').textContent = '$0.00';
-      document.getElementById('stat-profit').textContent = '$0.00';
-      document.getElementById('stat-return').textContent = 'Return: 0.00%';
-      document.getElementById('stat-cash').textContent = '$0.00';
-      document.getElementById('stat-frozen-cash').textContent = 'Frozen / Reserved: $0.00';
-      document.getElementById('stat-leverage').textContent = '1.00x';
-      document.getElementById('stat-margin-used').textContent = 'Init Margin: $0.00';
+      document.getElementById('stat-total-cash').textContent = '$0.00';
+      document.getElementById('stat-frozen-cash').textContent = 'Liquid: $0.00 | Frozen: $0.00';
+      document.getElementById('stat-total-position').textContent = '$0.00';
+      document.getElementById('stat-position-details').textContent = '0 Open Positions';
+      document.getElementById('stat-margin-used').textContent = '$0.00';
+      document.getElementById('stat-margin-reqs').textContent = 'Init: $0.00 | Maint: $0.00';
+      document.getElementById('stat-margin-available').textContent = '$0.00';
+      document.getElementById('stat-margin-excess').textContent = 'Uncommitted Margin Equity';
       document.getElementById('stat-buying-power').textContent = '$0.00';
-      document.getElementById('stat-available-margin').textContent = 'Available Margin: $0.00';
-      document.getElementById('stat-orders-summary').textContent = '0';
-      document.getElementById('stat-failed-summary').textContent = '0 Rejected / Failed';
+      document.getElementById('stat-buying-power-sub').textContent = 'Max Purchasing Capacity';
+      document.getElementById('stat-equity').textContent = '$0.00';
+      document.getElementById('stat-profit-sub').textContent = 'Net Profit: $0.00 (0.00%)';
 
       equityLabels.length = 0;
       equityData.length = 0;
