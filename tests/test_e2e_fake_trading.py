@@ -77,6 +77,7 @@ async def test_e2e_checker_trading_history(e2e_server, tmp_path):
     assert summary["ending_equity"] > 0
     assert summary["total_orders_submitted"] > 0
     assert summary["total_trades_executed"] > 0
+    assert summary["total_orders_dropped"] == 10
 
     # Verify CSV export
     assert Path(csv_file).exists()
@@ -109,4 +110,5 @@ async def test_e2e_trading_history(e2e_server, tmp_path):
     assert summary["ending_equity"] > 0
     assert summary["total_orders_submitted"] > 0
     assert summary["total_trades_executed"] > 0
+    assert summary["total_orders_dropped"] == 10
     assert Path(csv_file).exists()

@@ -50,12 +50,35 @@ async def run_fake_trading(
     logger.info(f"Loaded {len(events)} events from {history_file}")
     logger.info(f"Account config: capital=${init_capital:,.2f}, leverage={pass_leverage}x")
 
-    # Pre-build lookup for order shares from fills / other events
+    # Pre-build lookup for order shares and identify successful vs unsuccessful orders
+    filled_order_ids: set[str] = set()
+    order_to_filled_shares: Dict[str, float] = {}
     order_to_shares: Dict[str, float] = {}
+
     for e in events:
+        etype = e.get("event_type")
         oid = e.get("order_id")
-        if oid and "shares" in e and e["shares"] is not None:
+        if not oid:
+            continue
+
+        if "shares" in e and e["shares"] is not None:
             order_to_shares[oid] = float(e["shares"])
+
+        if etype == "ORDER_FILLED":
+            filled_order_ids.add(oid)
+            fill_shares = float(e.get("shares", 0.0) or 0.0)
+            order_to_filled_shares[oid] = order_to_filled_shares.get(oid, 0.0) + fill_shares
+        elif etype in ("REBALANCE_EXIT", "EOD_DELEVERAGE_TRIM", "STOP_LOSS_TRIGGERED"):
+            # These are executed trades directly recorded in historical log
+            if e.get("price") is not None or (e.get("shares") is not None and float(e["shares"]) > 0):
+                filled_order_ids.add(oid)
+                if oid not in order_to_filled_shares and e.get("shares") is not None:
+                    order_to_filled_shares[oid] = float(e["shares"])
+
+    logger.info(
+        f"Order analysis: {len(filled_order_ids)} successful orders identified with fills/executions in history. "
+        f"All unfilled or totally cancelled orders will be dropped."
+    )
 
     # Group actionable events by timestamp in chronological order
     ts_groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -74,6 +97,7 @@ async def run_fake_trading(
     total_orders_submitted = 0
     total_orders_cancelled = 0
     total_orders_rejected = 0
+    total_orders_dropped = 0
 
     try:
         # Reset simulator state to start fresh replay
@@ -105,6 +129,14 @@ async def run_fake_trading(
                 symbol = e.get("symbol")
 
                 if etype in ("ORDER_PLACED", "REBALANCE_EXIT", "EOD_DELEVERAGE_TRIM", "STOP_LOSS_TRIGGERED"):
+                    # Drop unsuccessful orders that were totally cancelled or never filled in history
+                    if oid and oid not in filled_order_ids:
+                        logger.info(
+                            f"Dropping unsuccessful/cancelled order {oid} ({symbol}) - no fills in history"
+                        )
+                        total_orders_dropped += 1
+                        continue
+
                     raw_action = str(e.get("action", "BUY")).upper()
                     if raw_action == "BUY":
                         side = OrderSide.BUY
@@ -113,8 +145,10 @@ async def run_fake_trading(
                     else:
                         side = OrderSide.SELL
 
-                    # Resolve share count
-                    shares = e.get("shares")
+                    # Resolve share count - use exact filled shares from history if available
+                    shares = order_to_filled_shares.get(oid) if oid else None
+                    if shares is None:
+                        shares = e.get("shares")
                     if shares is None and oid:
                         shares = order_to_shares.get(oid)
                     if shares is None and e.get("target_weight") and e.get("limit_price"):
@@ -163,6 +197,11 @@ async def run_fake_trading(
                         logger.error(f"Error submitting order {oid}: {err}")
 
                 elif etype == "ORDER_CANCELLED":
+                    # If this order was dropped as unsuccessful / cancelled with no fills, completely ignore it
+                    if oid and oid not in filled_order_ids:
+                        logger.debug(f"Dropping cancellation for dropped order {oid}")
+                        continue
+
                     if oid and oid in client_order_map:
                         srv_id = client_order_map[oid]
                         try:
@@ -212,6 +251,7 @@ async def run_fake_trading(
             "total_orders_submitted": total_orders_submitted,
             "total_orders_cancelled": total_orders_cancelled,
             "total_orders_rejected": total_orders_rejected,
+            "total_orders_dropped": total_orders_dropped,
             "total_trades_executed": len(trades),
             "open_positions_count": len(final_account.positions),
             "open_positions": {t: p.quantity for t, p in final_account.positions.items()},
@@ -245,6 +285,7 @@ def print_summary_table(summary: Dict[str, Any]):
     print(f" Orders Submitted:      {summary['total_orders_submitted']}")
     print(f" Orders Cancelled:      {summary['total_orders_cancelled']}")
     print(f" Orders Rejected:       {summary['total_orders_rejected']}")
+    print(f" Orders Dropped (Unsuccessful): {summary.get('total_orders_dropped', 0)}")
     print(f" Trades Executed:       {summary['total_trades_executed']}")
     print(f" Open Positions Count:  {summary['open_positions_count']}")
     if summary['open_positions']:
