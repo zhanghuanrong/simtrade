@@ -10,6 +10,8 @@ from simtrade.models.market_data import Bar
 from simtrade.models.order import Order, OrderCreate, OrderStatus
 from simtrade.models.trade import Trade
 from simtrade.reporting.performance import PerformanceAnalytics
+from simtrade.reporting.pass_store import PassRecord, PassSummary
+from simtrade.reporting.ledger import AccountSnapshot
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -31,6 +33,13 @@ def get_account(account_id: str = "trader_1"):
     """Get complete account ledger, equity, cash, and margin health."""
     sim = get_simulator()
     return sim.account_mgr.get_or_create_account(account_id)
+
+
+@api_router.get("/account/snapshots", response_model=List[AccountSnapshot], tags=["Account"])
+def get_account_snapshots(account_id: str = "trader_1"):
+    """Get historical equity and portfolio snapshots for an active account."""
+    sim = get_simulator()
+    return sim.ledger.get_snapshots(account_id)
 
 
 @api_router.get("/positions", response_model=Dict[str, Position], tags=["Account"])
@@ -254,4 +263,39 @@ def save_simulation_session(payload: SaveReportPayload):
     sim = get_simulator()
     files = sim.save_session(account_id=payload.account_id, output_dir=payload.output_dir)
     return {"status": "saved", "account_id": payload.account_id, "files": files}
+
+
+# -------------------------------------------------------------
+# Finished Passes Endpoints
+# -------------------------------------------------------------
+@api_router.get("/passes", response_model=List[PassSummary], tags=["Passes"])
+def list_simulation_passes():
+    """List all finished simulation passes stored in memory or on disk."""
+    sim = get_simulator()
+    return sim.pass_store.list_passes()
+
+
+@api_router.get("/passes/{pass_id}", response_model=PassRecord, tags=["Passes"])
+def get_simulation_pass(pass_id: str):
+    """Retrieve full details, metrics, equity snapshots, positions, and trades for a finished pass."""
+    sim = get_simulator()
+    record = sim.pass_store.get_pass(pass_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Pass '{pass_id}' not found")
+    return record
+
+
+@api_router.get("/passes/{pass_id}/trades/csv", tags=["Passes"])
+def download_pass_trades_csv(pass_id: str):
+    """Export and download trades of a finished pass in CSV format."""
+    sim = get_simulator()
+    record = sim.pass_store.get_pass(pass_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Pass '{pass_id}' not found")
+    csv_content = sim.pass_store.export_trades_csv(pass_id)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=trades_{pass_id}.csv"},
+    )
 

@@ -17,6 +17,8 @@ from simtrade.models.market_data import Bar
 from simtrade.models.order import Order, OrderCreate, OrderStatus
 from simtrade.models.trade import Trade
 from simtrade.reporting.ledger import EventLedger
+from simtrade.reporting.pass_store import PassRecord, PassStore, PassSummary
+from simtrade.utils import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,7 @@ class Simulator:
         self.margin_engine = MarginEngine(config=self.margin_config)
         self.account_mgr = AccountManager(margin_engine=self.margin_engine)
         self.ledger = EventLedger()
+        self.pass_store = PassStore(storage_dir="reports")
 
         # Current state
         self.latest_bars: Dict[str, Bar] = {}
@@ -457,9 +460,42 @@ class Simulator:
         with open(ledger_file, "w") as f:
             json.dump(ledger_entries, f, indent=2)
 
+        # 4. Save unified PassRecord to PassStore
+        net_profit = round(acc.equity - acc.initial_capital, 2)
+        total_ret = round((net_profit / max(1.0, acc.initial_capital)) * 100.0, 2)
+        summary = PassSummary(
+            pass_id=tag,
+            account_id=account_id,
+            tag=tag,
+            created_at=acc.created_at,
+            completed_at=utc_now(),
+            initial_capital=acc.initial_capital,
+            ending_equity=acc.equity,
+            net_profit=net_profit,
+            total_return_pct=total_ret,
+            cash=acc.cash,
+            realized_pnl=acc.realized_pnl,
+            unrealized_pnl=acc.unrealized_pnl,
+            total_trades=len(trades),
+            win_rate_pct=float(perf.get("win_rate_pct", 0.0)),
+            max_drawdown_pct=float(perf.get("max_drawdown_pct", 0.0)),
+            sharpe_ratio=float(perf.get("sharpe_ratio", 0.0)),
+            positions_count=len(acc.positions),
+        )
+        rec = PassRecord(
+            summary=summary,
+            performance=perf,
+            positions={t: p.model_dump(mode="json") for t, p in acc.positions.items()},
+            trades=[t.model_dump(mode="json") for t in trades],
+            snapshots=[s.model_dump(mode="json") for s in snapshots],
+            ledger_entries=ledger_entries,
+        )
+        self.pass_store.save_pass(rec)
+
         logger.info(f"Saved simulation pass reports for {account_id} ({tag}) to {output_dir}/")
         return {
             "trades_csv": str(csv_file),
             "performance_json": str(perf_file),
             "ledger_json": str(ledger_file),
+            "pass_id": tag,
         }

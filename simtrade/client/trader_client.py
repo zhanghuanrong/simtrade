@@ -286,6 +286,19 @@ class SimTradeClient:
         async with self._session.post(f"{self.base_url}/api/v1/reports/save", json=payload) as resp:
             return await resp.json()
 
+    async def list_passes(self) -> List[Dict[str, Any]]:
+        """List all finished simulation passes cataloged on the server."""
+        async with self._session.get(f"{self.base_url}/api/v1/passes") as resp:
+            return await resp.json()
+
+    async def get_pass(self, pass_id: str) -> Dict[str, Any]:
+        """Fetch complete historical record of a finished simulation pass."""
+        async with self._session.get(f"{self.base_url}/api/v1/passes/{pass_id}") as resp:
+            if resp.status != 200:
+                data = await resp.json()
+                raise ValueError(f"Failed to fetch pass {pass_id}: {data.get('detail')}")
+            return await resp.json()
+
 
 # Alias for convenience
 TraderClient = SimTradeClient

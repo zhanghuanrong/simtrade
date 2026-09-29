@@ -191,10 +191,11 @@
       <span id="sim-status-badge" class="badge badge-paused">PAUSED</span>
       <!-- Simulation Pass Selector -->
       <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
-        <span style="font-size: 12px; color: var(--text-muted);">Pass/Account:</span>
-        <select id="account-selector" onchange="onAccountChange(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 10px; border-radius:6px; font-weight:600; font-size:12px;">
-          <option value="trader_1">trader_1 (Default)</option>
+        <span style="font-size: 12px; color: var(--text-muted);">Pass / Account:</span>
+        <select id="account-selector" onchange="onAccountChange(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 10px; border-radius:6px; font-weight:600; font-size:12px; max-width:320px;">
+          <option value="account:trader_1">trader_1 (Default)</option>
         </select>
+        <span id="pass-mode-badge" class="badge" style="display:none; background:rgba(168, 85, 247, 0.2); color:var(--accent-purple); border:1px solid var(--accent-purple);">FINISHED PASS</span>
         <button onclick="openNewPassModal()" class="btn-purple" style="padding: 5px 9px; font-size: 11px;">+ New Pass</button>
       </div>
     </div>
@@ -269,7 +270,10 @@
 
     <!-- Order Entry Panel -->
     <div class="panel">
-      <h2>Quick Order Entry</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 style="margin-bottom:0;">Quick Order Entry</h2>
+        <span id="order-disabled-msg" style="display:none; font-size:11px; color:var(--accent-amber); font-weight:600;">(Read-only archive)</span>
+      </div>
       <div class="order-form">
         <div class="form-group">
           <label>Ticker</label>
@@ -299,7 +303,7 @@
           <label>Price</label>
           <input type="number" id="ord-price" placeholder="Limit / Stop Price" step="0.01">
         </div>
-        <button onclick="submitOrder()" class="btn-primary" style="margin-top: 8px;">Submit Order</button>
+        <button id="ord-submit-btn" onclick="submitOrder()" class="btn-primary" style="margin-top: 8px;">Submit Order</button>
       </div>
     </div>
   </div>
@@ -398,7 +402,7 @@
         Loading report...
       </div>
       <div style="display:flex; justify-content:space-between; margin-top:16px;">
-        <button onclick="saveSessionToServer()" class="btn-success">Save Session to Server</button>
+        <button id="perf-save-btn" onclick="saveSessionToServer()" class="btn-success">Save Session to Server</button>
         <button onclick="closePerfModal()" style="background:#475569;">Close</button>
       </div>
     </div>
@@ -410,6 +414,9 @@
     const equityData = [];
     const equityLabels = [];
     let currentAccountId = "trader_1";
+    let isViewingFinishedPass = false;
+    let currentPassId = null;
+    let currentPassRecord = null;
 
     function initChart() {
       const ctx = document.getElementById('equityChart').getContext('2d');
@@ -463,16 +470,16 @@
         updateMarketBars(msg.data);
         fetchMetadata();
       } else if (msg.type === 'ACCOUNT_UPDATE') {
-        if (msg.data.account_id === currentAccountId) {
+        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
           updateAccountUI(msg.data);
         }
       } else if (msg.type === 'TRADE_EXECUTION') {
-        if (msg.data.account_id === currentAccountId) {
+        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
           addTradeRow(msg.data);
           fetchOrders();
         }
       } else if (msg.type === 'ORDER_UPDATE') {
-        if (msg.data.account_id === currentAccountId) {
+        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
           fetchOrders();
         }
       }
@@ -618,26 +625,219 @@
 
     async function fetchAccounts() {
       try {
-        const res = await fetch('/api/v1/accounts');
-        const accounts = await res.json();
+        const [accRes, passRes] = await Promise.all([
+          fetch('/api/v1/accounts'),
+          fetch('/api/v1/passes')
+        ]);
+        const accounts = await accRes.json();
+        const passes = await passRes.json();
         const selector = document.getElementById('account-selector');
-        selector.innerHTML = accounts.map(a => `
-          <option value="${a.account_id}" ${a.account_id === currentAccountId ? 'selected' : ''}>
-            ${a.account_id} ${a.tag ? '(' + a.tag + ')' : ''}
-          </option>
-        `).join('');
+        
+        let html = '';
+        if (accounts && accounts.length > 0) {
+          html += '<optgroup label="Active Simulation Accounts">';
+          for (const a of accounts) {
+            const isSel = (!isViewingFinishedPass && a.account_id === currentAccountId);
+            html += `<option value="account:${a.account_id}" ${isSel ? 'selected' : ''}>
+              ⚡ ${a.account_id} ${a.tag && a.tag !== a.account_id ? '(' + a.tag + ')' : ''} [Active]
+            </option>`;
+          }
+          html += '</optgroup>';
+        }
+
+        if (passes && passes.length > 0) {
+          html += '<optgroup label="Finished Simulation Passes">';
+          for (const p of passes) {
+            const isSel = (isViewingFinishedPass && p.pass_id === currentPassId);
+            const sign = p.total_return_pct >= 0 ? '+' : '';
+            const retStr = `${sign}${p.total_return_pct.toFixed(2)}%`;
+            const sharpeStr = `SR: ${p.sharpe_ratio.toFixed(2)}`;
+            const tradesStr = `${p.total_trades} trades`;
+            html += `<option value="pass:${p.pass_id}" ${isSel ? 'selected' : ''}>
+              📁 ${p.pass_id} (${retStr}, ${sharpeStr}, ${tradesStr})
+            </option>`;
+          }
+          html += '</optgroup>';
+        }
+
+        selector.innerHTML = html;
       } catch (e) {
-        console.error('Failed to fetch accounts:', e);
+        console.error('Failed to fetch accounts and passes:', e);
       }
     }
 
-    function onAccountChange(accId) {
-      currentAccountId = accId;
+    async function onAccountChange(val) {
+      if (val.startsWith('pass:')) {
+        isViewingFinishedPass = true;
+        currentPassId = val.substring(5);
+        await loadFinishedPass(currentPassId);
+      } else {
+        isViewingFinishedPass = false;
+        currentPassId = null;
+        currentPassRecord = null;
+        currentAccountId = val.replace('account:', '');
+        await loadActiveAccount(currentAccountId);
+      }
+    }
+
+    async function loadFinishedPass(passId) {
+      try {
+        const res = await fetch(`/api/v1/passes/${passId}`);
+        if (!res.ok) {
+          alert(`Could not load pass '${passId}'`);
+          return;
+        }
+        const rec = await res.json();
+        currentPassRecord = rec;
+        const summary = rec.summary;
+
+        // 1. Badge & Header indicators
+        document.getElementById('chart-account-label').textContent = `${passId} (Finished Pass)`;
+        const passBadge = document.getElementById('pass-mode-badge');
+        if (passBadge) {
+          passBadge.style.display = 'inline-block';
+          passBadge.textContent = `PASS: ${passId}`;
+        }
+        const orderMsg = document.getElementById('order-disabled-msg');
+        if (orderMsg) orderMsg.style.display = 'inline';
+        const submitBtn = document.getElementById('ord-submit-btn');
+        if (submitBtn) submitBtn.disabled = true;
+
+        // 2. Metrics row
+        document.getElementById('stat-equity').textContent = '$' + summary.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('stat-cash').textContent = '$' + summary.cash.toLocaleString(undefined, {minimumFractionDigits: 2});
+        
+        const uEl = document.getElementById('stat-unrealized');
+        uEl.textContent = '$' + (summary.unrealized_pnl || 0).toFixed(2);
+        uEl.className = 'stat-val ' + ((summary.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative');
+
+        const rEl = document.getElementById('stat-realized');
+        rEl.textContent = '$' + (summary.realized_pnl || 0).toFixed(2);
+        rEl.className = 'stat-val ' + ((summary.realized_pnl || 0) >= 0 ? 'positive' : 'negative');
+
+        const profitSign = summary.net_profit >= 0 ? '+' : '';
+        document.getElementById('stat-bp').textContent = `${profitSign}$${summary.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2})} (${profitSign}${summary.total_return_pct.toFixed(2)}%)`;
+        const card5Label = document.querySelector('.stats-grid .stat-card:nth-child(5) .stat-label');
+        if (card5Label) card5Label.textContent = 'Net Profit / Return';
+
+        document.getElementById('stat-leverage').textContent = `SR: ${summary.sharpe_ratio.toFixed(2)} | MaxDD: ${summary.max_drawdown_pct.toFixed(1)}%`;
+        const card6Label = document.querySelector('.stats-grid .stat-card:nth-child(6) .stat-label');
+        if (card6Label) card6Label.textContent = 'Sharpe / Max Drawdown';
+
+        // 3. Equity Curve
+        equityLabels.length = 0;
+        equityData.length = 0;
+        if (rec.snapshots && rec.snapshots.length > 0) {
+          for (const s of rec.snapshots) {
+            const timeStr = s.sim_time ? s.sim_time.replace('T', ' ').substring(5, 19) : '';
+            equityLabels.push(timeStr);
+            equityData.push(s.equity);
+          }
+        } else {
+          equityLabels.push('Start', 'End');
+          equityData.push(summary.initial_capital, summary.ending_equity);
+        }
+        if (equityChart) equityChart.update();
+
+        // 4. Ending Positions
+        const posBody = document.getElementById('positions-body');
+        const positions = Object.values(rec.positions || {});
+        if (positions.length === 0) {
+          posBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions at pass close</td></tr>';
+        } else {
+          posBody.innerHTML = positions.map(p => `
+            <tr>
+              <td><strong>${p.ticker}</strong></td>
+              <td>${p.quantity}</td>
+              <td>$${(p.avg_entry_price || 0).toFixed(2)}</td>
+              <td>$${(p.current_price || 0).toFixed(2)}</td>
+              <td class="${(p.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative'}">$${(p.unrealized_pnl || 0).toFixed(2)}</td>
+            </tr>
+          `).join('');
+        }
+
+        // 5. Active Orders table
+        const ordBody = document.getElementById('orders-body');
+        ordBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">Pass completed & archived (${rec.trades ? rec.trades.length : 0} fills)</td></tr>`;
+
+        // 6. Executed Trades Tape
+        const tradesBody = document.getElementById('trades-body');
+        const trades = rec.trades || [];
+        if (trades.length === 0) {
+          tradesBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No trades in this pass</td></tr>';
+        } else {
+          tradesBody.innerHTML = trades.slice().reverse().map(t => `
+            <tr>
+              <td><strong>${t.ticker}</strong></td>
+              <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
+              <td>$${parseFloat(t.price).toFixed(2)}</td>
+              <td>${t.quantity}</td>
+              <td>$${parseFloat(t.commission || 0).toFixed(2)}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (e) {
+        console.error('Error loading pass:', e);
+      }
+    }
+
+    async function loadActiveAccount(accId) {
       document.getElementById('chart-account-label').textContent = accId;
-      equityData.length = 0;
-      equityLabels.length = 0;
-      fetchAccountDetails();
-      fetchOrders();
+      const passBadge = document.getElementById('pass-mode-badge');
+      if (passBadge) passBadge.style.display = 'none';
+      const orderMsg = document.getElementById('order-disabled-msg');
+      if (orderMsg) orderMsg.style.display = 'none';
+      const submitBtn = document.getElementById('ord-submit-btn');
+      if (submitBtn) submitBtn.disabled = false;
+
+      const card5Label = document.querySelector('.stats-grid .stat-card:nth-child(5) .stat-label');
+      if (card5Label) card5Label.textContent = 'Buying Power';
+      const card6Label = document.querySelector('.stats-grid .stat-card:nth-child(6) .stat-label');
+      if (card6Label) card6Label.textContent = 'Leverage / Maint Req';
+
+      // Load historical snapshots for active account if any
+      try {
+        const snapRes = await fetch(`/api/v1/account/snapshots?account_id=${accId}`);
+        if (snapRes.ok) {
+          const snaps = await snapRes.json();
+          equityLabels.length = 0;
+          equityData.length = 0;
+          if (snaps && snaps.length > 0) {
+            for (const s of snaps) {
+              equityLabels.push(s.sim_time ? s.sim_time.replace('T', ' ').substring(5, 19) : '');
+              equityData.push(s.equity);
+            }
+          }
+          if (equityChart) equityChart.update();
+        }
+      } catch (e) {}
+
+      await fetchAccountDetails();
+      await fetchOrders();
+      await fetchActiveTrades();
+    }
+
+    async function fetchActiveTrades() {
+      try {
+        const res = await fetch(`/api/v1/trades?account_id=${currentAccountId}&limit=100`);
+        if (res.ok) {
+          const trades = await res.json();
+          const tbody = document.getElementById('trades-body');
+          if (trades.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No executions yet</td></tr>';
+          } else {
+            tbody.innerHTML = trades.slice().reverse().map(t => `
+              <tr>
+                <td><strong>${t.ticker}</strong></td>
+                <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
+                <td>$${t.price.toFixed(2)}</td>
+                <td>${t.quantity}</td>
+                <td>$${t.commission.toFixed(2)}</td>
+              </tr>
+            `).join('');
+          }
+        }
+      } catch (e) {}
     }
 
     async function fetchAccountDetails() {
@@ -771,7 +971,7 @@
         } else {
           closeNewPassModal();
           await fetchAccounts();
-          onAccountChange(accId);
+          onAccountChange('account:' + accId);
         }
       } catch (e) {
         alert('Network error: ' + e);
@@ -779,31 +979,61 @@
     }
 
     function exportTradesCSV() {
-      window.location.href = `/api/v1/reports/trades/csv?account_id=${currentAccountId}`;
+      if (isViewingFinishedPass && currentPassId) {
+        window.location.href = `/api/v1/passes/${currentPassId}/trades/csv`;
+      } else {
+        window.location.href = `/api/v1/reports/trades/csv?account_id=${currentAccountId}`;
+      }
     }
 
     async function openPerformanceModal() {
-      document.getElementById('perf-modal-acc').textContent = currentAccountId;
+      const targetName = isViewingFinishedPass ? currentPassId : currentAccountId;
+      document.getElementById('perf-modal-acc').textContent = targetName + (isViewingFinishedPass ? ' (Finished Pass)' : '');
       document.getElementById('perf-modal').style.display = 'flex';
+
+      const saveBtn = document.getElementById('perf-save-btn');
+      if (saveBtn) {
+        saveBtn.style.display = isViewingFinishedPass ? 'none' : 'inline-block';
+      }
+
+      if (isViewingFinishedPass && currentPassRecord && currentPassRecord.performance) {
+        renderPerfModalContent(currentPassRecord.performance, currentPassRecord.summary);
+        return;
+      }
+
       try {
         const res = await fetch(`/api/v1/reports/performance?account_id=${currentAccountId}`);
         const p = await res.json();
-        document.getElementById('perf-modal-content').innerHTML = `
-          <table style="width:100%;">
-            <tr><td><strong>Initial Capital:</strong></td><td>$${p.initial_capital.toLocaleString()}</td></tr>
-            <tr><td><strong>Final Equity:</strong></td><td>$${p.final_equity.toLocaleString()}</td></tr>
-            <tr><td><strong>Total PnL:</strong></td><td class="${p.total_pnl >= 0 ? 'positive' : 'negative'}"><strong>$${p.total_pnl.toFixed(2)} (${p.total_return_pct}%)</strong></td></tr>
-            <tr><td><strong>Sharpe Ratio (Annualized):</strong></td><td><strong>${p.sharpe_ratio}</strong></td></tr>
-            <tr><td><strong>Sortino Ratio:</strong></td><td>${p.sortino_ratio}</td></tr>
-            <tr><td><strong>Max Drawdown:</strong></td><td>$${p.max_drawdown_usd.toFixed(2)} (${p.max_drawdown_pct}%)</td></tr>
-            <tr><td><strong>Total Trades:</strong></td><td>${p.total_trades}</td></tr>
-            <tr><td><strong>Snapshots Recorded:</strong></td><td>${p.total_snapshots}</td></tr>
-          </table>
-        `;
+        renderPerfModalContent(p);
       } catch (e) {
         document.getElementById('perf-modal-content').textContent = 'Error loading report: ' + e;
       }
     }
+
+    function renderPerfModalContent(p, summary) {
+      const initCap = p.initial_capital || (summary ? summary.initial_capital : 100000);
+      const finEq = p.final_equity || (summary ? summary.ending_equity : 100000);
+      const totPnl = p.total_pnl !== undefined ? p.total_pnl : (finEq - initCap);
+      const retPct = p.total_return_pct !== undefined ? p.total_return_pct : ((totPnl / Math.max(1, initCap)) * 100).toFixed(2);
+      const sharpe = p.sharpe_ratio !== undefined ? p.sharpe_ratio : (summary ? summary.sharpe_ratio : 0);
+      const maxDdUsd = p.max_drawdown_usd !== undefined ? p.max_drawdown_usd : 0;
+      const maxDdPct = p.max_drawdown_pct !== undefined ? p.max_drawdown_pct : (summary ? summary.max_drawdown_pct : 0);
+      const tradesCount = p.total_trades !== undefined ? p.total_trades : (summary ? summary.total_trades : 0);
+
+      document.getElementById('perf-modal-content').innerHTML = `
+        <table style="width:100%;">
+          <tr><td><strong>Initial Capital:</strong></td><td>$${initCap.toLocaleString()}</td></tr>
+          <tr><td><strong>Final Equity:</strong></td><td>$${finEq.toLocaleString()}</td></tr>
+          <tr><td><strong>Total PnL:</strong></td><td class="${totPnl >= 0 ? 'positive' : 'negative'}"><strong>$${parseFloat(totPnl).toFixed(2)} (${retPct}%)</strong></td></tr>
+          <tr><td><strong>Sharpe Ratio (Annualized):</strong></td><td><strong>${sharpe}</strong></td></tr>
+          <tr><td><strong>Sortino Ratio:</strong></td><td>${p.sortino_ratio !== undefined ? p.sortino_ratio : 'N/A'}</td></tr>
+          <tr><td><strong>Max Drawdown:</strong></td><td>$${parseFloat(maxDdUsd).toFixed(2)} (${maxDdPct}%)</td></tr>
+          <tr><td><strong>Total Trades:</strong></td><td>${tradesCount}</td></tr>
+          <tr><td><strong>Win Rate:</strong></td><td>${p.win_rate_pct !== undefined ? p.win_rate_pct + '%' : (summary ? summary.win_rate_pct + '%' : 'N/A')}</td></tr>
+        </table>
+      `;
+    }
+
     function closePerfModal() {
       document.getElementById('perf-modal').style.display = 'none';
     }
@@ -817,6 +1047,7 @@
         });
         const data = await res.json();
         alert('Session saved to server!\nFiles:\n' + Object.values(data.files).join('\n'));
+        await fetchAccounts();
       } catch (e) {
         alert('Error saving session: ' + e);
       }
@@ -836,10 +1067,9 @@
       fetchTickers();
       fetchAccounts();
       fetchMetadata();
-      fetchAccountDetails();
-      fetchOrders();
+      loadActiveAccount(currentAccountId);
       fetchStatus();
-      setInterval(fetchOrders, 4000);
+      setInterval(() => { if (!isViewingFinishedPass) fetchOrders(); }, 4000);
       setInterval(fetchMetadata, 5000);
     };
   </script>
