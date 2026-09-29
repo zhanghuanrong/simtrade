@@ -85,6 +85,35 @@ class PassStore:
         summaries.sort(key=lambda s: s.completed_at or s.created_at, reverse=True)
         return summaries
 
+    def delete_pass(self, pass_id: str) -> bool:
+        """Delete a single pass from memory and disk."""
+        removed = self._passes.pop(pass_id, None) is not None
+        file_path = self.passes_dir / f"{pass_id}.json"
+        if file_path.exists():
+            file_path.unlink(missing_ok=True)
+            removed = True
+        return removed
+
+    def clear(self) -> int:
+        """Clear all stored passes from memory and delete pass files from disk."""
+        count = len(self._passes)
+        self._passes.clear()
+        if self.passes_dir.exists():
+            for f in self.passes_dir.glob("*.json"):
+                try:
+                    f.unlink(missing_ok=True)
+                except Exception as e:
+                    logger.error(f"Error deleting pass file {f}: {e}")
+        if self.storage_dir.exists():
+            for pat in ["performance_*.json", "trades_*.csv", "ledger_*.json", "e2e_trades_*.csv"]:
+                for f in self.storage_dir.glob(pat):
+                    try:
+                        f.unlink(missing_ok=True)
+                    except Exception as e:
+                        logger.error(f"Error deleting legacy report {f}: {e}")
+        logger.info(f"Cleared all {count} simulation passes from PassStore and reports/")
+        return count
+
     def export_trades_csv(self, pass_id: str) -> str:
         """Export trades of a pass to CSV format."""
         rec = self.get_pass(pass_id)

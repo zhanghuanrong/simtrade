@@ -299,3 +299,22 @@ def download_pass_trades_csv(pass_id: str):
         headers={"Content-Disposition": f"attachment; filename=trades_{pass_id}.csv"},
     )
 
+
+@api_router.delete("/passes", tags=["Passes"])
+def clear_simulation_passes():
+    """Clear all finished simulation passes from memory and disk."""
+    sim = get_simulator()
+    count = sim.pass_store.clear()
+    return {"status": "cleared", "count": count}
+
+
+@api_router.delete("/passes/{pass_id}", tags=["Passes"])
+def delete_simulation_pass(pass_id: str):
+    """Delete a single finished simulation pass from memory and disk."""
+    sim = get_simulator()
+    success = sim.pass_store.delete_pass(pass_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Pass '{pass_id}' not found")
+    return {"status": "deleted", "pass_id": pass_id}
+
+

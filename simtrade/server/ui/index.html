@@ -197,6 +197,7 @@
         </select>
         <span id="pass-mode-badge" class="badge" style="display:none; background:rgba(168, 85, 247, 0.2); color:var(--accent-purple); border:1px solid var(--accent-purple);">FINISHED PASS</span>
         <button onclick="openNewPassModal()" class="btn-purple" style="padding: 5px 9px; font-size: 11px;">+ New Pass</button>
+        <button onclick="clearAllPasses()" style="background:#334155; padding: 5px 9px; font-size: 11px;" title="Clear all finished simulation passes from server">Clear Passes</button>
       </div>
     </div>
     <div class="controls">
@@ -1050,6 +1051,19 @@
         await fetchAccounts();
       } catch (e) {
         alert('Error saving session: ' + e);
+      }
+    }
+
+    async function clearAllPasses() {
+      if (!confirm('Are you sure you want to clear all finished simulation passes from the server?')) return;
+      try {
+        const res = await fetch('/api/v1/passes', { method: 'DELETE' });
+        const data = await res.json();
+        alert(`Cleared ${data.count} finished pass(es).`);
+        onAccountChange('account:trader_1');
+        await fetchAccounts();
+      } catch (e) {
+        alert('Error clearing passes: ' + e);
       }
     }
 

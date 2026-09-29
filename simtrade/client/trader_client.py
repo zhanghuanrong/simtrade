@@ -299,6 +299,19 @@ class SimTradeClient:
                 raise ValueError(f"Failed to fetch pass {pass_id}: {data.get('detail')}")
             return await resp.json()
 
+    async def delete_pass(self, pass_id: str) -> Dict[str, Any]:
+        """Delete a single finished simulation pass from the server."""
+        async with self._session.delete(f"{self.base_url}/api/v1/passes/{pass_id}") as resp:
+            if resp.status != 200:
+                data = await resp.json()
+                raise ValueError(f"Failed to delete pass {pass_id}: {data.get('detail')}")
+            return await resp.json()
+
+    async def clear_passes(self) -> Dict[str, Any]:
+        """Clear all finished simulation passes from the server."""
+        async with self._session.delete(f"{self.base_url}/api/v1/passes") as resp:
+            return await resp.json()
+
 
 # Alias for convenience
 TraderClient = SimTradeClient

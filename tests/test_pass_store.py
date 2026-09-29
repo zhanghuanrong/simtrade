@@ -170,3 +170,14 @@ def test_passes_api_endpoints():
         snap_resp = client.get("/api/v1/account/snapshots?account_id=trader_1")
         assert snap_resp.status_code == 200
         assert isinstance(snap_resp.json(), list)
+
+        # Clear all passes via DELETE /api/v1/passes
+        clear_resp = client.delete("/api/v1/passes")
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["status"] == "cleared"
+
+        # Verify no passes remain
+        resp3 = client.get("/api/v1/passes")
+        assert resp3.status_code == 200
+        assert len(resp3.json()) == 0
+
