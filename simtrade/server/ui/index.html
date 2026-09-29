@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SimTrade | Paper Trading Server</title>
+  <title>SimTrade | Finished Pass Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -24,7 +24,7 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background-color: var(--bg-dark);
       color: var(--text-main);
-      padding: 16px;
+      padding: 16px 24px;
       min-height: 100vh;
     }
     header {
@@ -35,21 +35,22 @@
       padding: 14px 20px;
       border-radius: 12px;
       border: 1px solid var(--border);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       flex-wrap: wrap;
       gap: 12px;
     }
     .brand { display: flex; align-items: center; gap: 12px; }
-    .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent-blue); }
+    .brand h1 { font-size: 20px; font-weight: 700; color: var(--accent-blue); letter-spacing: -0.5px; }
     .badge {
       padding: 4px 10px;
       border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
-    .badge-running { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
-    .badge-paused { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+    .badge-pass { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); border: 1px solid var(--accent-purple); }
+    .badge-success { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
     .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     button {
       background: var(--bg-card-hover);
@@ -67,7 +68,6 @@
     button.btn-primary:hover { background: #0369a1; }
     button.btn-success { background: #059669; border-color: #10b981; }
     button.btn-danger { background: #dc2626; border-color: #ef4444; }
-    button.btn-purple { background: #7e22ce; border-color: #a855f7; }
 
     /* Metadata Bar */
     .metadata-bar {
@@ -76,34 +76,19 @@
       align-items: center;
       background: #111827;
       border: 1px solid var(--border);
-      padding: 8px 16px;
+      padding: 10px 18px;
       border-radius: 8px;
-      margin-bottom: 12px;
-      font-size: 12px;
+      margin-bottom: 14px;
+      font-size: 13px;
       color: var(--text-muted);
       flex-wrap: wrap;
-      gap: 10px;
+      gap: 12px;
     }
-    .progress-track {
-      width: 150px;
-      height: 8px;
-      background: #334155;
-      border-radius: 4px;
-      overflow: hidden;
-      display: inline-block;
-      vertical-align: middle;
-      margin-left: 6px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--accent-blue);
-      width: 0%;
-      transition: width 0.3s;
-    }
-    
+
+    /* Key Metrics Grid */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 12px;
       margin-bottom: 16px;
     }
@@ -111,62 +96,94 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 12px 14px;
+      padding: 14px 16px;
     }
-    .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-    .stat-val { font-size: 19px; font-weight: 700; }
+    .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+    .stat-val { font-size: 22px; font-weight: 700; }
+    .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .positive { color: var(--accent-green); }
     .negative { color: var(--accent-red); }
 
-    .main-grid {
-      display: grid;
-      grid-template-columns: 280px 1fr 300px;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-    @media (max-width: 1200px) {
-      .main-grid { grid-template-columns: 1fr; }
-    }
-    .panel {
+    /* Main Chart Panel */
+    .chart-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 16px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
     }
-    .panel h2 { font-size: 14px; margin-bottom: 12px; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-
-    .ticker-row {
+    .panel-header {
       display: flex;
       justify-content: space-between;
-      padding: 8px 0;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Tabbed Inspection View */
+    .tabs-nav {
+      display: flex;
+      gap: 6px;
       border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
     }
-    .ticker-symbol { font-weight: 700; font-size: 14px; }
-    .ticker-price { font-weight: 600; font-size: 14px; }
-
-    .order-form { display: flex; flex-direction: column; gap: 8px; }
-    .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
-    .form-group input, .form-group select {
-      background: var(--bg-dark);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 7px 10px;
-      border-radius: 6px;
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 0;
       font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab-btn:hover { background: rgba(51, 65, 85, 0.3); color: var(--text-main); }
+    .tab-btn.active {
+      color: var(--accent-blue);
+      border-bottom: 2px solid var(--accent-blue);
     }
 
+    /* Tables */
+    .table-container {
+      max-height: 420px;
+      overflow-y: auto;
+    }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 8px 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 600; }
-    td { padding: 9px 10px; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
-    .table-panel { max-height: 280px; overflow-y: auto; }
+    th {
+      text-align: left;
+      padding: 9px 12px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      background: var(--bg-card);
+      z-index: 10;
+    }
+    td { padding: 9px 12px; border-bottom: 1px solid rgba(51, 65, 85, 0.4); }
+    tr:hover { background: rgba(51, 65, 85, 0.2); }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state h3 { font-size: 18px; margin-bottom: 8px; color: var(--text-main); }
 
     /* Modal */
     .modal-overlay {
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.75);
       backdrop-filter: blur(4px);
       z-index: 1000;
       justify-content: center;
@@ -177,7 +194,7 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 24px;
-      width: 440px;
+      width: 520px;
       max-width: 90vw;
     }
     .modal h3 { font-size: 18px; margin-bottom: 16px; color: var(--accent-blue); }
@@ -185,239 +202,205 @@
 </head>
 <body>
 
+  <!-- Top Navigation Header -->
   <header>
     <div class="brand">
       <h1>SimTrade Server</h1>
-      <span id="sim-status-badge" class="badge badge-paused">PAUSED</span>
-      <!-- Simulation Pass Selector -->
-      <div style="display: flex; align-items: center; gap: 6px; margin-left: 10px;">
-        <span style="font-size: 12px; color: var(--text-muted);">Pass / Account:</span>
-        <select id="account-selector" onchange="onAccountChange(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 10px; border-radius:6px; font-weight:600; font-size:12px; max-width:320px;">
-          <option value="account:trader_1">trader_1 (Default)</option>
+      <span class="badge badge-pass">Pass Analysis</span>
+      
+      <!-- Finished Pass Selector -->
+      <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
+        <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Finished Pass:</span>
+        <select id="pass-selector" onchange="onPassSelect(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 12px; border-radius:6px; font-weight:600; font-size:13px; min-width:320px;">
+          <option value="">Loading finished passes...</option>
         </select>
-        <span id="pass-mode-badge" class="badge" style="display:none; background:rgba(168, 85, 247, 0.2); color:var(--accent-purple); border:1px solid var(--accent-purple);">FINISHED PASS</span>
-        <button onclick="openNewPassModal()" class="btn-purple" style="padding: 5px 9px; font-size: 11px;">+ New Pass</button>
-        <button onclick="clearAllPasses()" style="background:#334155; padding: 5px 9px; font-size: 11px;" title="Clear all finished simulation passes from server">Clear Passes</button>
+        <button onclick="fetchPasses()" title="Refresh passes list" style="padding: 6px 10px; font-size: 12px;">↻ Refresh</button>
       </div>
     </div>
+
+    <!-- Actions -->
     <div class="controls">
-      <button onclick="sendSimControl('start')" class="btn-success">Play (1.0x Realtime)</button>
-      <button onclick="resetSimulation()" style="background:#4b5563;">Reset Run</button>
-      <button onclick="exportTradesCSV()">Export Trades</button>
-      <button onclick="openPerformanceModal()">Report</button>
-      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API</button></a>
+      <button onclick="exportTradesCSV()" class="btn-primary">Export Trades (CSV)</button>
+      <button onclick="openPerformanceModal()">Performance Report</button>
+      <button onclick="clearAllPasses()" style="background:#334155; color:#ef4444;" title="Clear all finished passes from disk">Clear Passes</button>
+      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API Docs</button></a>
     </div>
   </header>
 
-  <!-- Metadata Bar -->
+  <!-- Pass Run Metadata -->
   <div class="metadata-bar">
     <div>
-      <span>Range: </span><strong id="meta-range" style="color:var(--text-main);">Loading...</strong>
+      <span>Pass ID: </span><strong id="meta-pass-id" style="color:var(--accent-blue);">--</strong>
+      <span style="margin: 0 8px; color:var(--border);">|</span>
+      <span>Tag: </span><strong id="meta-tag" style="color:var(--text-main);">--</strong>
     </div>
     <div>
-      <span>Current Sim Time: </span><strong id="sim-clock" style="color:var(--accent-blue); font-family:monospace;">--:--:--</strong>
+      <span>Run Completed: </span><strong id="meta-completed" style="color:var(--text-main);">--</strong>
     </div>
     <div>
-      <span>Progress: </span><span id="meta-step">0</span> / <span id="meta-total">0</span> (<span id="meta-pct">0%</span>)
-      <div class="progress-track"><div id="meta-progress-fill" class="progress-fill"></div></div>
+      <span>Valuation Snapshots: </span><strong id="meta-snapshots" style="color:var(--accent-green);">0</strong>
+      <span style="margin: 0 8px; color:var(--border);">|</span>
+      <span>Total Fills: </span><strong id="meta-trades-count" style="color:var(--text-main);">0</strong>
     </div>
   </div>
 
   <!-- Key Metrics Row -->
   <div class="stats-grid">
     <div class="stat-card">
-      <div class="stat-label">Total Equity</div>
-      <div id="stat-equity" class="stat-val">$100,000.00</div>
+      <div class="stat-label">Ending Equity</div>
+      <div id="stat-equity" class="stat-val">$0.00</div>
+      <div id="stat-initial-cap" class="stat-sub">Starting: $100,000.00</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Cash Balance</div>
-      <div id="stat-cash" class="stat-val">$100,000.00</div>
+      <div class="stat-label">Net Profit / Return</div>
+      <div id="stat-profit" class="stat-val">$0.00</div>
+      <div id="stat-return" class="stat-sub">0.00%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Unrealized PnL</div>
-      <div id="stat-unrealized" class="stat-val">$0.00</div>
+      <div class="stat-label">Sharpe / Sortino</div>
+      <div id="stat-sharpe" class="stat-val">0.00</div>
+      <div id="stat-sortino" class="stat-sub">Sortino: 0.00</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Realized PnL</div>
-      <div id="stat-realized" class="stat-val">$0.00</div>
+      <div class="stat-label">Max Drawdown</div>
+      <div id="stat-drawdown-pct" class="stat-val negative">0.00%</div>
+      <div id="stat-drawdown-usd" class="stat-sub">$0.00 max dip</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Buying Power</div>
-      <div id="stat-bp" class="stat-val">$300,000.00</div>
+      <div class="stat-label">Trades Executed</div>
+      <div id="stat-trades" class="stat-val">0</div>
+      <div id="stat-winrate" class="stat-sub">Win Rate: 0.0%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Leverage / Maint Req</div>
-      <div id="stat-leverage" class="stat-val">1.0x / $0.00</div>
+      <div class="stat-label">Ending Cash Balance</div>
+      <div id="stat-cash" class="stat-val">$0.00</div>
+      <div id="stat-positions-count" class="stat-sub">0 Open Positions</div>
     </div>
   </div>
 
-  <!-- Main Trading Area -->
-  <div class="main-grid">
-    <!-- Live Prices Column -->
-    <div class="panel">
-      <h2>Live Tickers (1m)</h2>
-      <div id="ticker-list" style="max-height: 250px; overflow-y: auto;">
-        <div style="color: var(--text-muted);">Waiting for market feed...</div>
-      </div>
+  <!-- Main Valuation Curve -->
+  <div class="chart-panel">
+    <div class="panel-header">
+      <div class="panel-title">Portfolio Valuation Curve (<span id="chart-pass-label">--</span>)</div>
+      <span id="chart-date-range" style="font-size: 12px; color: var(--text-muted);">--</span>
     </div>
-
-    <!-- Chart Panel -->
-    <div class="panel">
-      <h2>Portfolio Equity Curve (<span id="chart-account-label">trader_1</span>)</h2>
-      <div style="height: 250px;">
-        <canvas id="equityChart"></canvas>
-      </div>
-    </div>
-
-    <!-- Order Entry Panel -->
-    <div class="panel">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-        <h2 style="margin-bottom:0;">Quick Order Entry</h2>
-        <span id="order-disabled-msg" style="display:none; font-size:11px; color:var(--accent-amber); font-weight:600;">(Read-only archive)</span>
-      </div>
-      <div class="order-form">
-        <div class="form-group">
-          <label>Ticker</label>
-          <select id="ord-ticker"></select>
-        </div>
-        <div class="form-group">
-          <label>Side</label>
-          <select id="ord-side">
-            <option value="BUY">BUY</option>
-            <option value="SELL">SELL</option>
-            <option value="SELL_SHORT">SELL SHORT</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Order Type</label>
-          <select id="ord-type" onchange="toggleLimitPrice(this.value)">
-            <option value="MARKET">MARKET</option>
-            <option value="LIMIT">LIMIT</option>
-            <option value="STOP">STOP</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Shares</label>
-          <input type="number" id="ord-qty" value="10" min="1" step="1">
-        </div>
-        <div class="form-group" id="group-limit" style="display:none;">
-          <label>Price</label>
-          <input type="number" id="ord-price" placeholder="Limit / Stop Price" step="0.01">
-        </div>
-        <button id="ord-submit-btn" onclick="submitOrder()" class="btn-primary" style="margin-top: 8px;">Submit Order</button>
-      </div>
+    <div style="height: 280px;">
+      <canvas id="equityChart"></canvas>
     </div>
   </div>
 
-  <!-- Tables: Positions, Active Orders, Trade Tape -->
-  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
-    <div class="panel table-panel">
-      <h2>Open Positions</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Ticker</th>
-            <th>Qty</th>
-            <th>Entry</th>
-            <th>Mark</th>
-            <th>PnL</th>
-          </tr>
-        </thead>
-        <tbody id="positions-body">
-          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions</td></tr>
-        </tbody>
-      </table>
+  <!-- Tabbed Detailed Inspection -->
+  <div class="chart-panel" style="padding-top: 10px;">
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('trades')">Executed Trades Tape (<span id="tab-trades-badge">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('positions')">Ending Positions (<span id="tab-positions-badge">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('catalog')">All Finished Passes Catalog</button>
+      <button class="tab-btn" onclick="switchTab('ledger')">Event Audit Ledger</button>
     </div>
 
-    <div class="panel table-panel">
-      <h2>Active Orders</h2>
+    <!-- Tab 1: Trades Tape -->
+    <div id="tab-trades" class="table-container">
       <table>
         <thead>
           <tr>
-            <th>Ticker</th>
-            <th>Side</th>
-            <th>Qty</th>
-            <th>Type</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="orders-body">
-          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No active orders</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="panel table-panel">
-      <h2>Execution Tape</h2>
-      <table>
-        <thead>
-          <tr>
+            <th>#</th>
+            <th>Sim Timestamp</th>
             <th>Ticker</th>
             <th>Side</th>
             <th>Price</th>
             <th>Qty</th>
-            <th>Comm</th>
+            <th>Notional</th>
+            <th>Commission</th>
           </tr>
         </thead>
         <tbody id="trades-body">
-          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No executions yet</td></tr>
+          <tr><td colspan="8" style="color:var(--text-muted); text-align:center;">No pass selected</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Tab 2: Ending Positions -->
+    <div id="tab-positions" class="table-container" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Position Type</th>
+            <th>Quantity</th>
+            <th>Avg Entry Price</th>
+            <th>Final Mark Price</th>
+            <th>Market Value</th>
+            <th>Unrealized PnL</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body">
+          <tr><td colspan="7" style="color:var(--text-muted); text-align:center;">No open positions at pass close</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Tab 3: Catalog of All Passes -->
+    <div id="tab-catalog" class="table-container" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>Pass ID</th>
+            <th>Tag / Account</th>
+            <th>Completed At</th>
+            <th>Initial Capital</th>
+            <th>Ending Equity</th>
+            <th>Net Profit</th>
+            <th>Return %</th>
+            <th>Sharpe</th>
+            <th>Max DD %</th>
+            <th>Trades</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="catalog-body">
+          <tr><td colspan="11" style="color:var(--text-muted); text-align:center;">No finished passes recorded yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Tab 4: Audit Ledger -->
+    <div id="tab-ledger" class="table-container" style="display:none;">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Event Type</th>
+            <th>Sim Time</th>
+            <th>Account</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody id="ledger-body">
+          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No ledger events available</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 
-  <!-- Modal: Configure New Pass / Negotiate Account -->
-  <div id="new-pass-modal" class="modal-overlay">
-    <div class="modal">
-      <h3>Configure Simulation Pass</h3>
-      <div class="order-form">
-        <div class="form-group">
-          <label>Account ID / Run Tag</label>
-          <input type="text" id="setup-id" placeholder="e.g. momentum_pass_1" value="pass_1">
-        </div>
-        <div class="form-group">
-          <label>Initial Total Equity ($)</label>
-          <input type="number" id="setup-equity" value="100000" step="1000">
-        </div>
-        <div class="form-group">
-          <label>Max Leverage (e.g. 3.0 = 33.3% margin, 4.0 = 25% margin)</label>
-          <input type="number" id="setup-leverage" value="3.0" step="0.5" min="1.0">
-        </div>
-        <div class="form-group">
-          <label>Initial Positions (Optional, comma-separated e.g. AAPL:50,TSLA:-20)</label>
-          <input type="text" id="setup-positions" placeholder="AAPL:50, NVDA:20">
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
-          <button onclick="closeNewPassModal()" style="background:#475569;">Cancel</button>
-          <button onclick="submitNewPass()" class="btn-primary">Create & Select</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal: Performance Report -->
+  <!-- Performance Modal -->
   <div id="perf-modal" class="modal-overlay">
-    <div class="modal" style="width: 500px;">
-      <h3>Session Performance Report (<span id="perf-modal-acc"></span>)</h3>
+    <div class="modal">
+      <h3>Quantitative Performance Report</h3>
       <div id="perf-modal-content" style="font-size: 13px; line-height: 1.8;">
         Loading report...
       </div>
-      <div style="display:flex; justify-content:space-between; margin-top:16px;">
-        <button id="perf-save-btn" onclick="saveSessionToServer()" class="btn-success">Save Session to Server</button>
+      <div style="display:flex; justify-content:flex-end; margin-top:20px;">
         <button onclick="closePerfModal()" style="background:#475569;">Close</button>
       </div>
     </div>
   </div>
 
   <script>
-    let ws = null;
     let equityChart = null;
-    const equityData = [];
-    const equityLabels = [];
-    let currentAccountId = "trader_1";
-    let isViewingFinishedPass = false;
-    let currentPassId = null;
     let currentPassRecord = null;
+    let allPasses = [];
+    const equityLabels = [];
+    const equityData = [];
 
     function initChart() {
       const ctx = document.getElementById('equityChart').getContext('2d');
@@ -431,606 +414,332 @@
             borderColor: '#38bdf8',
             backgroundColor: 'rgba(56, 189, 248, 0.1)',
             fill: true,
-            tension: 0.2,
+            tension: 0.1,
             borderWidth: 2,
-            pointRadius: 1,
+            pointRadius: 0,
+            pointHoverRadius: 4,
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `Equity: $${ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+              }
+            }
+          },
           scales: {
-            x: { display: false },
-            y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+            x: {
+              grid: { color: '#1e293b' },
+              ticks: { color: '#94a3b8', maxTicksLimit: 10 }
+            },
+            y: {
+              grid: { color: '#334155' },
+              ticks: {
+                color: '#94a3b8',
+                callback: (val) => '$' + Number(val).toLocaleString()
+              }
+            }
           }
         }
       });
     }
 
-    function connectWS() {
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${protocol}//${location.host}/ws/unified`;
-      ws = new WebSocket(url);
-
-      ws.onopen = () => console.log('Connected to SimTrade WS');
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        handleMessage(msg);
-      };
-      ws.onclose = () => {
-        console.warn('SimTrade WS disconnected. Reconnecting in 2s...');
-        setTimeout(connectWS, 2000);
-      };
-    }
-
-    function handleMessage(msg) {
-      if (msg.type === 'SIM_STATUS') {
-        updateClockStatus(msg.data);
-      } else if (msg.type === 'MARKET_BARS') {
-        updateMarketBars(msg.data);
-        fetchMetadata();
-      } else if (msg.type === 'ACCOUNT_UPDATE') {
-        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
-          updateAccountUI(msg.data);
-        }
-      } else if (msg.type === 'TRADE_EXECUTION') {
-        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
-          addTradeRow(msg.data);
-          fetchOrders();
-        }
-      } else if (msg.type === 'ORDER_UPDATE') {
-        if (!isViewingFinishedPass && msg.data.account_id === currentAccountId) {
-          fetchOrders();
-        }
-      }
-    }
-
-    function updateClockStatus(data) {
-      if (data.current_time) {
-        document.getElementById('sim-clock').textContent = data.current_time.replace('T', ' ').substring(0, 19);
-      }
-      const badge = document.getElementById('sim-status-badge');
-      if (data.is_running && !data.is_paused) {
-        badge.className = 'badge badge-running';
-        badge.textContent = 'RUNNING';
-      } else {
-        badge.className = 'badge badge-paused';
-        badge.textContent = 'PAUSED';
-      }
-    }
-
-    function updateMarketBars(data) {
-      if (data.timestamp) {
-        document.getElementById('sim-clock').textContent = data.timestamp.replace('T', ' ').substring(0, 19);
-      }
-      const tickerList = document.getElementById('ticker-list');
-      tickerList.innerHTML = '';
-      for (const [ticker, bar] of Object.entries(data.bars)) {
-        const change = bar.close - bar.open;
-        const color = change >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
-        const sign = change >= 0 ? '+' : '';
-        tickerList.innerHTML += `
-          <div class="ticker-row">
-            <div>
-              <div class="ticker-symbol">${ticker}</div>
-              <div style="font-size:11px; color:var(--text-muted);">Vol: ${bar.volume.toLocaleString()}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="ticker-price" style="color: ${color}">$${bar.close.toFixed(2)}</div>
-              <div style="font-size:11px; color:${color}">${sign}${change.toFixed(2)}</div>
-            </div>
-          </div>
-        `;
-      }
-    }
-
-    function updateAccountUI(acc) {
-      document.getElementById('stat-equity').textContent = '$' + acc.equity.toLocaleString(undefined, {minimumFractionDigits: 2});
-      document.getElementById('stat-cash').textContent = '$' + acc.cash.toLocaleString(undefined, {minimumFractionDigits: 2});
-      
-      const uEl = document.getElementById('stat-unrealized');
-      uEl.textContent = '$' + acc.unrealized_pnl.toFixed(2);
-      uEl.className = 'stat-val ' + (acc.unrealized_pnl >= 0 ? 'positive' : 'negative');
-
-      const rEl = document.getElementById('stat-realized');
-      rEl.textContent = '$' + acc.realized_pnl.toFixed(2);
-      rEl.className = 'stat-val ' + (acc.realized_pnl >= 0 ? 'positive' : 'negative');
-
-      if (acc.margin) {
-        document.getElementById('stat-bp').textContent = '$' + acc.margin.buying_power.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('stat-leverage').textContent = `${acc.margin.leverage.toFixed(2)}x / $${acc.margin.maintenance_margin_requirement.toFixed(0)}`;
-      }
-
-      if (equityChart) {
-        equityLabels.push('');
-        equityData.push(acc.equity);
-        if (equityData.length > 100) {
-          equityLabels.shift();
-          equityData.shift();
-        }
-        equityChart.update();
-      }
-
-      // Positions
-      const posBody = document.getElementById('positions-body');
-      const positions = Object.values(acc.positions || {});
-      if (positions.length === 0) {
-        posBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions</td></tr>';
-      } else {
-        posBody.innerHTML = positions.map(p => `
-          <tr>
-            <td><strong>${p.ticker}</strong></td>
-            <td>${p.quantity}</td>
-            <td>$${p.avg_entry_price.toFixed(2)}</td>
-            <td>$${p.current_price.toFixed(2)}</td>
-            <td class="${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}">$${p.unrealized_pnl.toFixed(2)}</td>
-          </tr>
-        `).join('');
-      }
-    }
-
-    function addTradeRow(t) {
-      const tbody = document.getElementById('trades-body');
-      const row = `
-        <tr>
-          <td><strong>${t.ticker}</strong></td>
-          <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
-          <td>$${t.price.toFixed(2)}</td>
-          <td>${t.quantity}</td>
-          <td>$${t.commission.toFixed(2)}</td>
-        </tr>
-      `;
-      if (tbody.innerHTML.includes('No executions yet')) {
-        tbody.innerHTML = row;
-      } else {
-        tbody.insertAdjacentHTML('afterbegin', row);
-      }
-    }
-
-    async function fetchOrders() {
+    async function fetchPasses() {
       try {
-        const res = await fetch(`/api/v1/orders?account_id=${currentAccountId}`);
-        const orders = await res.json();
-        const tbody = document.getElementById('orders-body');
-        if (orders.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No active orders</td></tr>';
-        } else {
-          tbody.innerHTML = orders.map(o => `
-            <tr>
-              <td><strong>${o.ticker}</strong></td>
-              <td>${o.side}</td>
-              <td>${o.remaining_quantity}/${o.quantity}</td>
-              <td>${o.order_type}</td>
-              <td><button onclick="cancelOrder('${o.order_id}')" style="padding:2px 8px; font-size:11px;">Cancel</button></td>
-            </tr>
-          `).join('');
-        }
-      } catch (e) {
-        console.error('Failed to fetch orders:', e);
-      }
-    }
-
-    async function fetchTickers() {
-      try {
-        const res = await fetch('/api/v1/market/tickers');
-        const tickers = await res.json();
-        if (tickers && tickers.length > 0) {
-          const select = document.getElementById('ord-ticker');
-          select.innerHTML = tickers.map(t => `<option value="${t}">${t}</option>`).join('');
-        }
-      } catch (e) {
-        console.error('Failed to fetch tickers:', e);
-      }
-    }
-
-    async function fetchAccounts() {
-      try {
-        const [accRes, passRes] = await Promise.all([
-          fetch('/api/v1/accounts'),
-          fetch('/api/v1/passes')
-        ]);
-        const accounts = await accRes.json();
-        const passes = await passRes.json();
-        const selector = document.getElementById('account-selector');
+        const res = await fetch('/api/v1/passes');
+        allPasses = await res.json();
+        const selector = document.getElementById('pass-selector');
         
-        let html = '';
-        if (accounts && accounts.length > 0) {
-          html += '<optgroup label="Active Simulation Accounts">';
-          for (const a of accounts) {
-            const isSel = (!isViewingFinishedPass && a.account_id === currentAccountId);
-            html += `<option value="account:${a.account_id}" ${isSel ? 'selected' : ''}>
-              ⚡ ${a.account_id} ${a.tag && a.tag !== a.account_id ? '(' + a.tag + ')' : ''} [Active]
-            </option>`;
-          }
-          html += '</optgroup>';
+        if (!allPasses || allPasses.length === 0) {
+          selector.innerHTML = '<option value="">No finished passes recorded</option>';
+          renderEmptyState();
+          renderCatalog();
+          return;
         }
 
-        if (passes && passes.length > 0) {
-          html += '<optgroup label="Finished Simulation Passes">';
-          for (const p of passes) {
-            const isSel = (isViewingFinishedPass && p.pass_id === currentPassId);
-            const sign = p.total_return_pct >= 0 ? '+' : '';
-            const retStr = `${sign}${p.total_return_pct.toFixed(2)}%`;
-            const sharpeStr = `SR: ${p.sharpe_ratio.toFixed(2)}`;
-            const tradesStr = `${p.total_trades} trades`;
-            html += `<option value="pass:${p.pass_id}" ${isSel ? 'selected' : ''}>
-              📁 ${p.pass_id} (${retStr}, ${sharpeStr}, ${tradesStr})
-            </option>`;
-          }
-          html += '</optgroup>';
-        }
+        const currentSelected = selector.value;
+        selector.innerHTML = allPasses.map(p => {
+          const sign = p.total_return_pct >= 0 ? '+' : '';
+          const retStr = `${sign}${p.total_return_pct.toFixed(2)}%`;
+          const sharpeStr = `SR: ${p.sharpe_ratio.toFixed(2)}`;
+          const tradesStr = `${p.total_trades} trades`;
+          return `<option value="${p.pass_id}">${p.pass_id} (${retStr}, ${sharpeStr}, ${tradesStr})</option>`;
+        }).join('');
 
-        selector.innerHTML = html;
+        renderCatalog();
+
+        // Select previously selected pass or the first (newest) pass
+        const toSelect = allPasses.some(p => p.pass_id === currentSelected) ? currentSelected : allPasses[0].pass_id;
+        selector.value = toSelect;
+        await onPassSelect(toSelect);
       } catch (e) {
-        console.error('Failed to fetch accounts and passes:', e);
+        console.error('Failed to fetch passes:', e);
       }
     }
 
-    async function onAccountChange(val) {
-      if (val.startsWith('pass:')) {
-        isViewingFinishedPass = true;
-        currentPassId = val.substring(5);
-        await loadFinishedPass(currentPassId);
-      } else {
-        isViewingFinishedPass = false;
-        currentPassId = null;
-        currentPassRecord = null;
-        currentAccountId = val.replace('account:', '');
-        await loadActiveAccount(currentAccountId);
-      }
-    }
-
-    async function loadFinishedPass(passId) {
+    async function onPassSelect(passId) {
+      if (!passId) return;
       try {
         const res = await fetch(`/api/v1/passes/${passId}`);
         if (!res.ok) {
           alert(`Could not load pass '${passId}'`);
           return;
         }
-        const rec = await res.json();
-        currentPassRecord = rec;
-        const summary = rec.summary;
+        currentPassRecord = await res.json();
+        renderPass(currentPassRecord);
+      } catch (e) {
+        console.error('Error fetching pass details:', e);
+      }
+    }
 
-        // 1. Badge & Header indicators
-        document.getElementById('chart-account-label').textContent = `${passId} (Finished Pass)`;
-        const passBadge = document.getElementById('pass-mode-badge');
-        if (passBadge) {
-          passBadge.style.display = 'inline-block';
-          passBadge.textContent = `PASS: ${passId}`;
+    function renderPass(rec) {
+      const s = rec.summary;
+      const perf = rec.performance || {};
+
+      // 1. Metadata
+      document.getElementById('meta-pass-id').textContent = s.pass_id;
+      document.getElementById('meta-tag').textContent = s.tag || s.account_id;
+      document.getElementById('meta-completed').textContent = s.completed_at ? s.completed_at.replace('T', ' ').substring(0, 19) : (s.created_at ? s.created_at.replace('T', ' ').substring(0, 19) : '--');
+      document.getElementById('meta-snapshots').textContent = (rec.snapshots ? rec.snapshots.length : 0).toLocaleString();
+      document.getElementById('meta-trades-count').textContent = (rec.trades ? rec.trades.length : 0).toLocaleString();
+      document.getElementById('chart-pass-label').textContent = s.pass_id;
+
+      // 2. Metrics Cards
+      document.getElementById('stat-equity').textContent = '$' + s.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      document.getElementById('stat-initial-cap').textContent = `Starting: $${s.initial_capital.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+      const profitSign = s.net_profit >= 0 ? '+' : '';
+      const profitEl = document.getElementById('stat-profit');
+      profitEl.textContent = `${profitSign}$${s.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      profitEl.className = 'stat-val ' + (s.net_profit >= 0 ? 'positive' : 'negative');
+      document.getElementById('stat-return').textContent = `Total Return: ${profitSign}${s.total_return_pct.toFixed(2)}%`;
+
+      document.getElementById('stat-sharpe').textContent = s.sharpe_ratio.toFixed(2);
+      document.getElementById('stat-sortino').textContent = `Sortino: ${perf.sortino_ratio !== undefined ? perf.sortino_ratio : 'N/A'}`;
+
+      document.getElementById('stat-drawdown-pct').textContent = `-${s.max_drawdown_pct.toFixed(2)}%`;
+      const maxDdUsd = perf.max_drawdown_usd !== undefined ? perf.max_drawdown_usd : 0;
+      document.getElementById('stat-drawdown-usd').textContent = `-$${parseFloat(maxDdUsd).toLocaleString(undefined, {minimumFractionDigits: 2})} max dip`;
+
+      document.getElementById('stat-trades').textContent = (s.total_trades || (rec.trades ? rec.trades.length : 0)).toLocaleString();
+      document.getElementById('stat-winrate').textContent = `Win Rate: ${s.win_rate_pct ? s.win_rate_pct.toFixed(1) + '%' : 'N/A'}`;
+
+      document.getElementById('stat-cash').textContent = '$' + s.cash.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const posCount = rec.positions ? Object.keys(rec.positions).length : 0;
+      document.getElementById('stat-positions-count').textContent = `${posCount} Held Position${posCount === 1 ? '' : 's'}`;
+
+      // 3. Equity Curve Chart
+      equityLabels.length = 0;
+      equityData.length = 0;
+      if (rec.snapshots && rec.snapshots.length > 0) {
+        for (const pt of rec.snapshots) {
+          const tStr = pt.sim_time ? pt.sim_time.replace('T', ' ').substring(5, 19) : '';
+          equityLabels.push(tStr);
+          equityData.push(pt.equity);
         }
-        const orderMsg = document.getElementById('order-disabled-msg');
-        if (orderMsg) orderMsg.style.display = 'inline';
-        const submitBtn = document.getElementById('ord-submit-btn');
-        if (submitBtn) submitBtn.disabled = true;
+        const first = rec.snapshots[0].sim_time ? rec.snapshots[0].sim_time.replace('T', ' ').substring(0, 16) : '';
+        const last = rec.snapshots[rec.snapshots.length - 1].sim_time ? rec.snapshots[rec.snapshots.length - 1].sim_time.replace('T', ' ').substring(0, 16) : '';
+        document.getElementById('chart-date-range').textContent = `${first} ~ ${last} (${rec.snapshots.length.toLocaleString()} points)`;
+      } else {
+        equityLabels.push('Start', 'End');
+        equityData.push(s.initial_capital, s.ending_equity);
+        document.getElementById('chart-date-range').textContent = 'Initial to Final Valuation';
+      }
+      if (equityChart) equityChart.update();
 
-        // 2. Metrics row
-        document.getElementById('stat-equity').textContent = '$' + summary.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('stat-cash').textContent = '$' + summary.cash.toLocaleString(undefined, {minimumFractionDigits: 2});
-        
-        const uEl = document.getElementById('stat-unrealized');
-        uEl.textContent = '$' + (summary.unrealized_pnl || 0).toFixed(2);
-        uEl.className = 'stat-val ' + ((summary.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative');
+      // 4. Badges on Tabs
+      const tradesList = rec.trades || [];
+      const positionsMap = rec.positions || {};
+      document.getElementById('tab-trades-badge').textContent = tradesList.length;
+      document.getElementById('tab-positions-badge').textContent = Object.keys(positionsMap).length;
 
-        const rEl = document.getElementById('stat-realized');
-        rEl.textContent = '$' + (summary.realized_pnl || 0).toFixed(2);
-        rEl.className = 'stat-val ' + ((summary.realized_pnl || 0) >= 0 ? 'positive' : 'negative');
+      // 5. Render Executed Trades
+      const tradesBody = document.getElementById('trades-body');
+      if (tradesList.length === 0) {
+        tradesBody.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted); text-align:center;">No trades executed in this pass</td></tr>';
+      } else {
+        tradesBody.innerHTML = tradesList.map((t, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td style="font-family:monospace; color:var(--text-muted);">${(t.timestamp || '').replace('T', ' ').substring(0, 19)}</td>
+            <td><strong>${t.ticker}</strong></td>
+            <td style="font-weight:700; color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'};">${t.side}</td>
+            <td>$${parseFloat(t.price).toFixed(2)}</td>
+            <td>${t.quantity}</td>
+            <td>$${parseFloat(t.notional || (t.price * t.quantity)).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+            <td>$${parseFloat(t.commission || 0).toFixed(2)}</td>
+          </tr>
+        `).join('');
+      }
 
-        const profitSign = summary.net_profit >= 0 ? '+' : '';
-        document.getElementById('stat-bp').textContent = `${profitSign}$${summary.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2})} (${profitSign}${summary.total_return_pct.toFixed(2)}%)`;
-        const card5Label = document.querySelector('.stats-grid .stat-card:nth-child(5) .stat-label');
-        if (card5Label) card5Label.textContent = 'Net Profit / Return';
-
-        document.getElementById('stat-leverage').textContent = `SR: ${summary.sharpe_ratio.toFixed(2)} | MaxDD: ${summary.max_drawdown_pct.toFixed(1)}%`;
-        const card6Label = document.querySelector('.stats-grid .stat-card:nth-child(6) .stat-label');
-        if (card6Label) card6Label.textContent = 'Sharpe / Max Drawdown';
-
-        // 3. Equity Curve
-        equityLabels.length = 0;
-        equityData.length = 0;
-        if (rec.snapshots && rec.snapshots.length > 0) {
-          for (const s of rec.snapshots) {
-            const timeStr = s.sim_time ? s.sim_time.replace('T', ' ').substring(5, 19) : '';
-            equityLabels.push(timeStr);
-            equityData.push(s.equity);
-          }
-        } else {
-          equityLabels.push('Start', 'End');
-          equityData.push(summary.initial_capital, summary.ending_equity);
-        }
-        if (equityChart) equityChart.update();
-
-        // 4. Ending Positions
-        const posBody = document.getElementById('positions-body');
-        const positions = Object.values(rec.positions || {});
-        if (positions.length === 0) {
-          posBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No open positions at pass close</td></tr>';
-        } else {
-          posBody.innerHTML = positions.map(p => `
+      // 6. Render Ending Positions
+      const posBody = document.getElementById('positions-body');
+      const posKeys = Object.keys(positionsMap);
+      if (posKeys.length === 0) {
+        posBody.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted); text-align:center;">No open positions at pass close (100% Cash)</td></tr>';
+      } else {
+        posBody.innerHTML = posKeys.map(ticker => {
+          const p = positionsMap[ticker];
+          const isLong = p.quantity > 0;
+          const posVal = Math.abs(p.quantity * (p.current_price || p.avg_entry_price || 0));
+          const pnl = p.unrealized_pnl || 0;
+          return `
             <tr>
-              <td><strong>${p.ticker}</strong></td>
+              <td><strong>${ticker}</strong></td>
+              <td><span class="badge ${isLong ? 'badge-success' : 'badge-pass'}">${isLong ? 'LONG' : 'SHORT'}</span></td>
               <td>${p.quantity}</td>
               <td>$${(p.avg_entry_price || 0).toFixed(2)}</td>
               <td>$${(p.current_price || 0).toFixed(2)}</td>
-              <td class="${(p.unrealized_pnl || 0) >= 0 ? 'positive' : 'negative'}">$${(p.unrealized_pnl || 0).toFixed(2)}</td>
+              <td>$${posVal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+              <td class="${pnl >= 0 ? 'positive' : 'negative'}"><strong>${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</strong></td>
             </tr>
-          `).join('');
-        }
+          `;
+        }).join('');
+      }
 
-        // 5. Active Orders table
-        const ordBody = document.getElementById('orders-body');
-        ordBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">Pass completed & archived (${rec.trades ? rec.trades.length : 0} fills)</td></tr>`;
-
-        // 6. Executed Trades Tape
-        const tradesBody = document.getElementById('trades-body');
-        const trades = rec.trades || [];
-        if (trades.length === 0) {
-          tradesBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No trades in this pass</td></tr>';
-        } else {
-          tradesBody.innerHTML = trades.slice().reverse().map(t => `
-            <tr>
-              <td><strong>${t.ticker}</strong></td>
-              <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
-              <td>$${parseFloat(t.price).toFixed(2)}</td>
-              <td>${t.quantity}</td>
-              <td>$${parseFloat(t.commission || 0).toFixed(2)}</td>
-            </tr>
-          `).join('');
-        }
-      } catch (e) {
-        console.error('Error loading pass:', e);
+      // 7. Render Audit Ledger
+      const ledgerBody = document.getElementById('ledger-body');
+      const ledgerEntries = rec.ledger_entries || [];
+      if (ledgerEntries.length === 0) {
+        ledgerBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No audit ledger entries available</td></tr>';
+      } else {
+        ledgerBody.innerHTML = ledgerEntries.slice(0, 500).map(e => `
+          <tr>
+            <td>${e.entry_id}</td>
+            <td><strong style="color:var(--accent-blue);">${e.event_type}</strong></td>
+            <td style="font-family:monospace; color:var(--text-muted);">${(e.sim_time || '').replace('T', ' ').substring(0, 19)}</td>
+            <td>${e.account_id}</td>
+            <td style="font-size:12px; color:var(--text-muted);">${JSON.stringify(e.details || {})}</td>
+          </tr>
+        `).join('');
       }
     }
 
-    async function loadActiveAccount(accId) {
-      document.getElementById('chart-account-label').textContent = accId;
-      const passBadge = document.getElementById('pass-mode-badge');
-      if (passBadge) passBadge.style.display = 'none';
-      const orderMsg = document.getElementById('order-disabled-msg');
-      if (orderMsg) orderMsg.style.display = 'none';
-      const submitBtn = document.getElementById('ord-submit-btn');
-      if (submitBtn) submitBtn.disabled = false;
-
-      const card5Label = document.querySelector('.stats-grid .stat-card:nth-child(5) .stat-label');
-      if (card5Label) card5Label.textContent = 'Buying Power';
-      const card6Label = document.querySelector('.stats-grid .stat-card:nth-child(6) .stat-label');
-      if (card6Label) card6Label.textContent = 'Leverage / Maint Req';
-
-      // Load historical snapshots for active account if any
-      try {
-        const snapRes = await fetch(`/api/v1/account/snapshots?account_id=${accId}`);
-        if (snapRes.ok) {
-          const snaps = await snapRes.json();
-          equityLabels.length = 0;
-          equityData.length = 0;
-          if (snaps && snaps.length > 0) {
-            for (const s of snaps) {
-              equityLabels.push(s.sim_time ? s.sim_time.replace('T', ' ').substring(5, 19) : '');
-              equityData.push(s.equity);
-            }
-          }
-          if (equityChart) equityChart.update();
-        }
-      } catch (e) {}
-
-      await fetchAccountDetails();
-      await fetchOrders();
-      await fetchActiveTrades();
-    }
-
-    async function fetchActiveTrades() {
-      try {
-        const res = await fetch(`/api/v1/trades?account_id=${currentAccountId}&limit=100`);
-        if (res.ok) {
-          const trades = await res.json();
-          const tbody = document.getElementById('trades-body');
-          if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No executions yet</td></tr>';
-          } else {
-            tbody.innerHTML = trades.slice().reverse().map(t => `
-              <tr>
-                <td><strong>${t.ticker}</strong></td>
-                <td style="color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
-                <td>$${t.price.toFixed(2)}</td>
-                <td>${t.quantity}</td>
-                <td>$${t.commission.toFixed(2)}</td>
-              </tr>
-            `).join('');
-          }
-        }
-      } catch (e) {}
-    }
-
-    async function fetchAccountDetails() {
-      try {
-        const res = await fetch(`/api/v1/account?account_id=${currentAccountId}`);
-        const acc = await res.json();
-        updateAccountUI(acc);
-      } catch (e) {}
-    }
-
-    async function fetchMetadata() {
-      try {
-        const res = await fetch('/api/v1/sim/metadata');
-        const meta = await res.json();
-        if (meta.start_time && meta.end_time) {
-          document.getElementById('meta-range').textContent = `${meta.start_time.substring(0, 16).replace('T', ' ')} ~ ${meta.end_time.substring(0, 16).replace('T', ' ')}`;
-        }
-        document.getElementById('meta-step').textContent = meta.cursor || 0;
-        document.getElementById('meta-total').textContent = meta.total_bars || 0;
-        document.getElementById('meta-pct').textContent = `${meta.progress_pct}%`;
-        document.getElementById('meta-progress-fill').style.width = `${meta.progress_pct}%`;
-      } catch (e) {}
-    }
-
-    function sendSimControl(action) {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action } }));
+    function renderCatalog() {
+      const catBody = document.getElementById('catalog-body');
+      if (!allPasses || allPasses.length === 0) {
+        catBody.innerHTML = '<tr><td colspan="11" style="color:var(--text-muted); text-align:center;">No finished passes recorded yet</td></tr>';
+        return;
       }
-      setTimeout(fetchStatus, 300);
+      catBody.innerHTML = allPasses.map(p => {
+        const sign = p.total_return_pct >= 0 ? '+' : '';
+        const retClass = p.total_return_pct >= 0 ? 'positive' : 'negative';
+        return `
+          <tr>
+            <td><strong>${p.pass_id}</strong></td>
+            <td>${p.tag || p.account_id}</td>
+            <td style="font-family:monospace; color:var(--text-muted);">${(p.completed_at || p.created_at || '').replace('T', ' ').substring(0, 19)}</td>
+            <td>$${p.initial_capital.toLocaleString()}</td>
+            <td><strong>$${p.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td>
+            <td class="${retClass}"><strong>${sign}$${p.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td>
+            <td class="${retClass}"><strong>${sign}${p.total_return_pct.toFixed(2)}%</strong></td>
+            <td><strong>${p.sharpe_ratio.toFixed(2)}</strong></td>
+            <td class="negative">-${p.max_drawdown_pct.toFixed(2)}%</td>
+            <td>${p.total_trades}</td>
+            <td><button onclick="selectPassFromCatalog('${p.pass_id}')" class="btn-primary" style="padding:3px 8px; font-size:11px;">Inspect</button></td>
+          </tr>
+        `;
+      }).join('');
     }
 
-    function setSpeed(speed) {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'SIM_CONTROL', data: { action: 'speed', speed } }));
-      }
+    function selectPassFromCatalog(passId) {
+      document.getElementById('pass-selector').value = passId;
+      switchTab('trades');
+      onPassSelect(passId);
     }
 
-    async function resetSimulation() {
-      if (!confirm('Reset simulation playback cursor to beginning of dataset?')) return;
-      await fetch('/api/v1/sim/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      equityData.length = 0;
+    function renderEmptyState() {
+      document.getElementById('meta-pass-id').textContent = 'None';
+      document.getElementById('meta-tag').textContent = 'None';
+      document.getElementById('meta-completed').textContent = '--';
+      document.getElementById('meta-snapshots').textContent = '0';
+      document.getElementById('meta-trades-count').textContent = '0';
+      document.getElementById('chart-pass-label').textContent = 'No Pass Selected';
+      document.getElementById('chart-date-range').textContent = 'Run a simulation pass to view results';
+
+      document.getElementById('stat-equity').textContent = '$0.00';
+      document.getElementById('stat-profit').textContent = '$0.00';
+      document.getElementById('stat-return').textContent = '0.00%';
+      document.getElementById('stat-sharpe').textContent = '0.00';
+      document.getElementById('stat-sortino').textContent = 'Sortino: 0.00';
+      document.getElementById('stat-drawdown-pct').textContent = '0.00%';
+      document.getElementById('stat-drawdown-usd').textContent = '$0.00 max dip';
+      document.getElementById('stat-trades').textContent = '0';
+      document.getElementById('stat-winrate').textContent = 'Win Rate: 0.0%';
+      document.getElementById('stat-cash').textContent = '$0.00';
+      document.getElementById('stat-positions-count').textContent = '0 Open Positions';
+
       equityLabels.length = 0;
+      equityData.length = 0;
       if (equityChart) equityChart.update();
-      fetchMetadata();
-      fetchStatus();
-      fetchAccountDetails();
+
+      document.getElementById('trades-body').innerHTML = `
+        <tr><td colspan="8">
+          <div class="empty-state">
+            <h3>No Finished Simulation Passes</h3>
+            <p>Run your programmatic trading client (e.g. <code>./scripts/e2e_client.sh</code>) to execute trading passes. Finished passes will automatically appear here for inspection.</p>
+          </div>
+        </td></tr>
+      `;
     }
 
-    function toggleLimitPrice(type) {
-      document.getElementById('group-limit').style.display = (type === 'LIMIT' || type === 'STOP') ? 'flex' : 'none';
-    }
+    function switchTab(tabName) {
+      const tabs = ['trades', 'positions', 'catalog', 'ledger'];
+      tabs.forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if (el) el.style.display = (t === tabName) ? 'block' : 'none';
+      });
 
-    async function submitOrder() {
-      const ticker = document.getElementById('ord-ticker').value;
-      const side = document.getElementById('ord-side').value;
-      const order_type = document.getElementById('ord-type').value;
-      const quantity = parseFloat(document.getElementById('ord-qty').value);
-      const priceVal = parseFloat(document.getElementById('ord-price').value);
-
-      const payload = {
-        ticker,
-        side,
-        order_type,
-        quantity,
-        limit_price: order_type === 'LIMIT' ? priceVal : null,
-        stop_price: order_type === 'STOP' ? priceVal : null,
-      };
-
-      try {
-        const res = await fetch(`/api/v1/orders?account_id=${currentAccountId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          alert('Order error: ' + (err.detail || 'Failed'));
+      const buttons = document.querySelectorAll('.tabs-nav .tab-btn');
+      buttons.forEach((b, idx) => {
+        if (tabs[idx] === tabName) {
+          b.classList.add('active');
         } else {
-          fetchOrders();
+          b.classList.remove('active');
         }
-      } catch (e) {
-        alert('Network error: ' + e);
-      }
-    }
-
-    async function cancelOrder(orderId) {
-      await fetch(`/api/v1/orders/${orderId}?account_id=${currentAccountId}`, { method: 'DELETE' });
-      fetchOrders();
-    }
-
-    function openNewPassModal() {
-      document.getElementById('new-pass-modal').style.display = 'flex';
-    }
-    function closeNewPassModal() {
-      document.getElementById('new-pass-modal').style.display = 'none';
-    }
-
-    async function submitNewPass() {
-      const accId = document.getElementById('setup-id').value.trim();
-      const equity = parseFloat(document.getElementById('setup-equity').value);
-      const leverage = parseFloat(document.getElementById('setup-leverage').value);
-      const posStr = document.getElementById('setup-positions').value.trim();
-
-      const initial_positions = {};
-      if (posStr) {
-        posStr.split(',').forEach(item => {
-          const parts = item.split(':');
-          if (parts.length === 2) {
-            initial_positions[parts[0].trim().toUpperCase()] = parseFloat(parts[1].trim());
-          }
-        });
-      }
-
-      const payload = {
-        account_id: accId,
-        tag: accId,
-        initial_total_equity: equity,
-        leverage: leverage,
-        initial_positions: Object.keys(initial_positions).length > 0 ? initial_positions : null,
-      };
-
-      try {
-        const res = await fetch('/api/v1/account/setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          alert('Setup error: ' + (err.detail || 'Failed'));
-        } else {
-          closeNewPassModal();
-          await fetchAccounts();
-          onAccountChange('account:' + accId);
-        }
-      } catch (e) {
-        alert('Network error: ' + e);
-      }
+      });
     }
 
     function exportTradesCSV() {
-      if (isViewingFinishedPass && currentPassId) {
-        window.location.href = `/api/v1/passes/${currentPassId}/trades/csv`;
-      } else {
-        window.location.href = `/api/v1/reports/trades/csv?account_id=${currentAccountId}`;
-      }
-    }
-
-    async function openPerformanceModal() {
-      const targetName = isViewingFinishedPass ? currentPassId : currentAccountId;
-      document.getElementById('perf-modal-acc').textContent = targetName + (isViewingFinishedPass ? ' (Finished Pass)' : '');
-      document.getElementById('perf-modal').style.display = 'flex';
-
-      const saveBtn = document.getElementById('perf-save-btn');
-      if (saveBtn) {
-        saveBtn.style.display = isViewingFinishedPass ? 'none' : 'inline-block';
-      }
-
-      if (isViewingFinishedPass && currentPassRecord && currentPassRecord.performance) {
-        renderPerfModalContent(currentPassRecord.performance, currentPassRecord.summary);
+      const passId = document.getElementById('pass-selector').value;
+      if (!passId) {
+        alert('Please select a finished pass first.');
         return;
       }
-
-      try {
-        const res = await fetch(`/api/v1/reports/performance?account_id=${currentAccountId}`);
-        const p = await res.json();
-        renderPerfModalContent(p);
-      } catch (e) {
-        document.getElementById('perf-modal-content').textContent = 'Error loading report: ' + e;
-      }
+      window.location.href = `/api/v1/passes/${passId}/trades/csv`;
     }
 
-    function renderPerfModalContent(p, summary) {
-      const initCap = p.initial_capital || (summary ? summary.initial_capital : 100000);
-      const finEq = p.final_equity || (summary ? summary.ending_equity : 100000);
-      const totPnl = p.total_pnl !== undefined ? p.total_pnl : (finEq - initCap);
-      const retPct = p.total_return_pct !== undefined ? p.total_return_pct : ((totPnl / Math.max(1, initCap)) * 100).toFixed(2);
-      const sharpe = p.sharpe_ratio !== undefined ? p.sharpe_ratio : (summary ? summary.sharpe_ratio : 0);
-      const maxDdUsd = p.max_drawdown_usd !== undefined ? p.max_drawdown_usd : 0;
-      const maxDdPct = p.max_drawdown_pct !== undefined ? p.max_drawdown_pct : (summary ? summary.max_drawdown_pct : 0);
-      const tradesCount = p.total_trades !== undefined ? p.total_trades : (summary ? summary.total_trades : 0);
+    function openPerformanceModal() {
+      if (!currentPassRecord) {
+        alert('No finished pass selected.');
+        return;
+      }
+      const s = currentPassRecord.summary;
+      const p = currentPassRecord.performance || {};
+      const modal = document.getElementById('perf-modal');
+      const content = document.getElementById('perf-modal-content');
+      modal.style.display = 'flex';
 
-      document.getElementById('perf-modal-content').innerHTML = `
+      const profitSign = s.net_profit >= 0 ? '+' : '';
+      const pnlClass = s.net_profit >= 0 ? 'positive' : 'negative';
+
+      content.innerHTML = `
         <table style="width:100%;">
-          <tr><td><strong>Initial Capital:</strong></td><td>$${initCap.toLocaleString()}</td></tr>
-          <tr><td><strong>Final Equity:</strong></td><td>$${finEq.toLocaleString()}</td></tr>
-          <tr><td><strong>Total PnL:</strong></td><td class="${totPnl >= 0 ? 'positive' : 'negative'}"><strong>$${parseFloat(totPnl).toFixed(2)} (${retPct}%)</strong></td></tr>
-          <tr><td><strong>Sharpe Ratio (Annualized):</strong></td><td><strong>${sharpe}</strong></td></tr>
+          <tr><td><strong>Pass ID:</strong></td><td><code>${s.pass_id}</code></td></tr>
+          <tr><td><strong>Account / Tag:</strong></td><td>${s.tag || s.account_id}</td></tr>
+          <tr><td><strong>Initial Capital:</strong></td><td>$${s.initial_capital.toLocaleString()}</td></tr>
+          <tr><td><strong>Final Equity:</strong></td><td><strong>$${s.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td></tr>
+          <tr><td><strong>Net PnL / Return:</strong></td><td class="${pnlClass}"><strong>${profitSign}$${s.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2})} (${profitSign}${s.total_return_pct.toFixed(2)}%)</strong></td></tr>
+          <tr><td><strong>Annualized Sharpe:</strong></td><td><strong>${s.sharpe_ratio.toFixed(2)}</strong></td></tr>
           <tr><td><strong>Sortino Ratio:</strong></td><td>${p.sortino_ratio !== undefined ? p.sortino_ratio : 'N/A'}</td></tr>
-          <tr><td><strong>Max Drawdown:</strong></td><td>$${parseFloat(maxDdUsd).toFixed(2)} (${maxDdPct}%)</td></tr>
-          <tr><td><strong>Total Trades:</strong></td><td>${tradesCount}</td></tr>
-          <tr><td><strong>Win Rate:</strong></td><td>${p.win_rate_pct !== undefined ? p.win_rate_pct + '%' : (summary ? summary.win_rate_pct + '%' : 'N/A')}</td></tr>
+          <tr><td><strong>Max Drawdown:</strong></td><td><strong class="negative">-${s.max_drawdown_pct.toFixed(2)}%</strong></td></tr>
+          <tr><td><strong>Total Trades:</strong></td><td>${s.total_trades}</td></tr>
+          <tr><td><strong>Valuation Snapshots:</strong></td><td>${(currentPassRecord.snapshots ? currentPassRecord.snapshots.length : 0).toLocaleString()}</td></tr>
         </table>
       `;
     }
@@ -1039,52 +748,23 @@
       document.getElementById('perf-modal').style.display = 'none';
     }
 
-    async function saveSessionToServer() {
-      try {
-        const res = await fetch('/api/v1/reports/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: currentAccountId, output_dir: 'reports' })
-        });
-        const data = await res.json();
-        alert('Session saved to server!\nFiles:\n' + Object.values(data.files).join('\n'));
-        await fetchAccounts();
-      } catch (e) {
-        alert('Error saving session: ' + e);
-      }
-    }
-
     async function clearAllPasses() {
-      if (!confirm('Are you sure you want to clear all finished simulation passes from the server?')) return;
+      if (!confirm('Are you sure you want to delete all finished simulation passes? This cannot be undone.')) return;
       try {
         const res = await fetch('/api/v1/passes', { method: 'DELETE' });
         const data = await res.json();
         alert(`Cleared ${data.count} finished pass(es).`);
-        onAccountChange('account:trader_1');
-        await fetchAccounts();
+        await fetchPasses();
       } catch (e) {
         alert('Error clearing passes: ' + e);
       }
     }
 
-    async function fetchStatus() {
-      try {
-        const res = await fetch('/api/v1/sim/status');
-        const data = await res.json();
-        updateClockStatus(data);
-      } catch (e) {}
-    }
-
     window.onload = () => {
       initChart();
-      connectWS();
-      fetchTickers();
-      fetchAccounts();
-      fetchMetadata();
-      loadActiveAccount(currentAccountId);
-      fetchStatus();
-      setInterval(() => { if (!isViewingFinishedPass) fetchOrders(); }, 4000);
-      setInterval(fetchMetadata, 5000);
+      fetchPasses();
+      // Periodically refresh pass catalog in case client finished a new pass in background
+      setInterval(fetchPasses, 6000);
     };
   </script>
 </body>
