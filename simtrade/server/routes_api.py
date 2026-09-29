@@ -199,6 +199,12 @@ def setup_account(payload: AccountSetupRequest):
     """Negotiate and configure initial account balance, positions, leverage, and margin terms."""
     sim = get_simulator()
     mark_prices = {t: b.close for t, b in sim.latest_bars.items()}
+    if not mark_prices and hasattr(sim, "feeder") and sim.feeder:
+        cur_bars = sim.feeder.get_bars_for_time(sim.clock.current_time)
+        mark_prices = {t: b.close for t, b in cur_bars.items()}
+        if not mark_prices and sim.feeder.timeline:
+            first_bars = sim.feeder.get_bars_for_time(sim.feeder.timeline[0])
+            mark_prices = {t: b.close for t, b in first_bars.items()}
     return sim.account_mgr.setup_account(payload, mark_prices=mark_prices)
 
 

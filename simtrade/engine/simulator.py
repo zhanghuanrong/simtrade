@@ -94,6 +94,12 @@ class Simulator:
 
         # Estimate execution price for margin check
         latest_bar = self.latest_bars.get(order.ticker)
+        if not latest_bar and hasattr(self, "feeder") and self.feeder:
+            cur_bars = self.feeder.get_bars_for_time(self.clock.current_time)
+            latest_bar = cur_bars.get(order.ticker)
+            if not latest_bar and self.feeder.timeline:
+                first_bars = self.feeder.get_bars_for_time(self.feeder.timeline[0])
+                latest_bar = first_bars.get(order.ticker)
         est_price = order.limit_price or (latest_bar.close if latest_bar else 100.0)
 
         # Validate with risk & margin engine
@@ -253,6 +259,12 @@ class Simulator:
                     bars_to_step.append(t)
                 elif norm_t > target_ts:
                     break
+        else:
+            # Synthetic generation mode: step minute by minute up to target_ts
+            step_dt = current_ts + self.clock.interval
+            while step_dt <= target_ts:
+                bars_to_step.append(step_dt)
+                step_dt += self.clock.interval
 
         all_new_trades: List[Dict[str, Any]] = []
         total_bars_processed = 0
@@ -359,9 +371,12 @@ class Simulator:
             self.clock.current_time = self.feeder.timeline[self.clock.cursor]
         elif start_time:
             self.clock.current_time = start_time
+        else:
+            self.clock.current_time = self.feeder.start_time or datetime(2026, 1, 5, 9, 30, 0)
 
         self.clock.step_count = 0
         self.matcher.active_orders.clear()
+        self.latest_bars.clear()
         logger.info(f"Simulator reset to time {self.clock.current_time}")
 
     def get_metadata(self) -> Dict[str, Any]:

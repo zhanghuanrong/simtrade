@@ -24,7 +24,7 @@ class SimClock:
             self.current_time = self.timeline[0]
             self.cursor = 1
         else:
-            self.current_time: datetime = start_time or datetime(2026, 1, 5, 9, 30, 0)
+            self.current_time = start_time or datetime(2026, 1, 5, 9, 30, 0)
         self.interval = timedelta(seconds=interval_seconds)
         self.speed_multiplier = speed_multiplier  # 1.0 = real-time, 60.0 = 1 sec per min, 0 = instant
         self.is_running: bool = False

@@ -33,12 +33,18 @@ class SimTradeClient:
         self._on_trade_handlers: List[Callable[[Trade], Coroutine[Any, Any, None]]] = []
         self._on_account_handlers: List[Callable[[Account], Coroutine[Any, Any, None]]] = []
 
-    async def connect(self):
-        """Establish HTTP session and WebSocket streaming connection."""
+    async def connect(self, with_ws: bool = True):
+        """Establish HTTP session and optional WebSocket streaming connection."""
         self._session = aiohttp.ClientSession()
-        self._ws = await self._session.ws_connect(self.ws_url)
-        self._listen_task = asyncio.create_task(self._listen_ws())
-        logger.info(f"Connected to SimTrade server at {self.base_url}")
+        if with_ws:
+            try:
+                self._ws = await self._session.ws_connect(self.ws_url)
+                self._listen_task = asyncio.create_task(self._listen_ws())
+                logger.info(f"Connected to SimTrade server at {self.base_url} (HTTP + WS)")
+            except Exception as e:
+                logger.warning(f"WebSocket connection failed ({e}), continuing HTTP-only")
+        else:
+            logger.info(f"Connected to SimTrade server at {self.base_url} (HTTP-only)")
 
     async def close(self):
         """Close connections cleanly."""
@@ -182,6 +188,12 @@ class SimTradeClient:
                 raise ValueError(f"Failed to fetch order {order_id}: {data.get('detail')}")
             return Order(**data)
 
+    async def get_trades(self, limit: int = 500) -> List[Trade]:
+        """Fetch trade execution history for this account."""
+        async with self._session.get(f"{self.base_url}/api/v1/trades?account_id={self.account_id}&limit={limit}") as resp:
+            data = await resp.json()
+            return [Trade(**t) for t in data]
+
     async def get_performance(self) -> Dict[str, Any]:
         """Fetch analytics report (Sharpe, max drawdown, total return)."""
         async with self._session.get(f"{self.base_url}/api/v1/reports/performance?account_id={self.account_id}") as resp:
@@ -273,3 +285,7 @@ class SimTradeClient:
         payload = {"account_id": acc_id, "output_dir": output_dir}
         async with self._session.post(f"{self.base_url}/api/v1/reports/save", json=payload) as resp:
             return await resp.json()
+
+
+# Alias for convenience
+TraderClient = SimTradeClient
