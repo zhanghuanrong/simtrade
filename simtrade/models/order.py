@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from simtrade.utils import utc_now
 from enum import Enum
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -71,11 +71,31 @@ class Order(BaseModel):
     time_in_force: TimeInForce = TimeInForce.GTC
     status: OrderStatus = OrderStatus.PENDING
     avg_fill_price: float = 0.0
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    trading_time: Optional[datetime] = None
+    sim_created_at: datetime = Field(default_factory=utc_now)
+    wall_received_at: Optional[datetime] = None
+    sim_updated_at: datetime = Field(default_factory=utc_now)
+    created_at: Optional[datetime] = None
+    server_received_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     reject_reason: Optional[str] = None
     reserved_frozen_cash: float = 0.0
+    unseen_bars: List[Dict[str, Any]] = Field(default_factory=list)
 
     def model_post_init(self, __context):
         if self.remaining_quantity == 0.0 and self.filled_quantity == 0.0:
             self.remaining_quantity = self.quantity
+        if self.created_at is None:
+            self.created_at = self.sim_created_at
+        else:
+            self.sim_created_at = self.created_at
+
+        if self.wall_received_at is None and self.server_received_at is not None:
+            self.wall_received_at = self.server_received_at
+        elif self.server_received_at is None and self.wall_received_at is not None:
+            self.server_received_at = self.wall_received_at
+
+        if self.updated_at is None:
+            self.updated_at = self.sim_updated_at
+        else:
+            self.sim_updated_at = self.updated_at

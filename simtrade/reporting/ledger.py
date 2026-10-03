@@ -19,12 +19,15 @@ class LedgerEntry(BaseModel):
 class AccountSnapshot(BaseModel):
     """Point-in-time portfolio valuation for equity curve generation."""
     sim_time: datetime
+    wall_time: datetime = Field(default_factory=utc_now)
     cash: float
+    reserved_cash: float = 0.0
     equity: float
     realized_pnl: float
     unrealized_pnl: float
     gross_market_value: float
     leverage: float
+    positions: Dict[str, float] = Field(default_factory=dict)  # ticker -> market_value
 
 
 class EventLedger:
@@ -47,18 +50,21 @@ class EventLedger:
         self.entries.append(entry)
 
     def record_snapshot(self, account_id: str, sim_time: datetime, cash: float, equity: float,
-                        realized_pnl: float, unrealized_pnl: float, gross_market_value: float, leverage: float):
+                        realized_pnl: float, unrealized_pnl: float, gross_market_value: float, leverage: float,
+                        positions: Optional[Dict[str, float]] = None, reserved_cash: float = 0.0):
         if account_id not in self.snapshots:
             self.snapshots[account_id] = []
         
         snap = AccountSnapshot(
             sim_time=sim_time,
             cash=cash,
+            reserved_cash=reserved_cash,
             equity=equity,
             realized_pnl=realized_pnl,
             unrealized_pnl=unrealized_pnl,
             gross_market_value=gross_market_value,
             leverage=leverage,
+            positions=positions or {},
         )
         self.snapshots[account_id].append(snap)
 

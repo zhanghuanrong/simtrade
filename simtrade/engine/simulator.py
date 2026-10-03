@@ -1,7 +1,7 @@
 """Central simulation engine orchestrating clock, market data feeds, matching, and risk."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, time
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 import logging
@@ -18,7 +18,7 @@ from simtrade.models.order import Order, OrderCreate, OrderSide, OrderStatus, Or
 from simtrade.models.trade import Trade
 from simtrade.reporting.ledger import EventLedger
 from simtrade.reporting.pass_store import PassRecord, PassStore, PassSummary
-from simtrade.utils import utc_now
+from simtrade.utils import is_regular_trading_hours, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,11 @@ class Simulator:
         self.sim_config.tickers = self.feeder.tickers
 
         # Engine subcomponents
+        start_ts = self.feeder.start_time
+        if start_ts and start_ts.time() == time(9, 31):
+            start_ts = start_ts - timedelta(minutes=1)
         self.clock = SimClock(
-            start_time=self.feeder.start_time,
+            start_time=start_ts,
             speed_multiplier=self.sim_config.speed_multiplier,
             timeline=self.feeder.timeline,
         )
@@ -69,6 +72,7 @@ class Simulator:
         self.all_trades: List[Trade] = []
         self._loop_task: Optional[asyncio.Task] = None
         self._broadcast_callbacks: List[Callable[[str, Any], Coroutine[Any, Any, None]]] = []
+        self.account_bar_cursors: Dict[str, datetime] = {}
 
     def register_broadcast_callback(self, callback: Callable[[str, Any], Coroutine[Any, Any, None]]):
         """Register an async callback for broadcasting events to WebSocket clients."""
@@ -81,8 +85,67 @@ class Simulator:
             except Exception as e:
                 logger.error(f"Error in broadcast callback {event_type}: {e}")
 
+    def drain_unseen_bars(self, account_id: str = "trader_1") -> List[Dict[str, Any]]:
+        """
+        Drain all market bar events that occurred since the account's last interaction.
+        Updates the high-water-mark cursor to current virtual simulation time.
+        """
+        cur_sim = self.clock.sim_current_time
+        start_cursor = self.account_bar_cursors.get(account_id)
+        if start_cursor is None:
+            if self.feeder.timeline:
+                start_cursor = self.feeder.timeline[0]
+            else:
+                start_cursor = None
+
+        if hasattr(self.feeder, "get_bars_between"):
+            unseen = self.feeder.get_bars_between(start_cursor, cur_sim)
+        else:
+            unseen = []
+
+        self.account_bar_cursors[account_id] = cur_sim
+        return unseen
+
     def submit_order(self, order_create: OrderCreate, account_id: str = "trader_1") -> Order:
         """Submit a new order from a client."""
+        from simtrade.utils import to_eastern_time, is_regular_trading_hours
+        virtual_sim_time = to_eastern_time(self.clock.now())
+        wall_now = utc_now()
+        unseen_bars = self.drain_unseen_bars(account_id)
+
+        # 1. Enforce Regular Trading Hours (RTH) only (09:30 - 16:00 ET, Mon-Fri)
+        is_rth, rth_reason = is_regular_trading_hours(virtual_sim_time)
+        if not is_rth:
+            order = Order(
+                account_id=account_id,
+                ticker=order_create.ticker,
+                side=order_create.side,
+                order_type=order_create.order_type,
+                quantity=order_create.quantity,
+                limit_price=order_create.limit_price,
+                stop_price=order_create.stop_price,
+                time_in_force=order_create.time_in_force,
+                client_order_id=order_create.client_order_id,
+                trading_time=virtual_sim_time,
+                sim_created_at=virtual_sim_time,
+                wall_received_at=wall_now,
+                sim_updated_at=virtual_sim_time,
+                created_at=virtual_sim_time,
+                server_received_at=wall_now,
+                updated_at=virtual_sim_time,
+                status=OrderStatus.REJECTED,
+                reject_reason=rth_reason,
+                unseen_bars=unseen_bars,
+            )
+            self.matcher.all_orders[order.order_id] = order
+            self.ledger.record("ORDER_REJECTED", account_id, virtual_sim_time, {
+                "order_id": order.order_id,
+                "ticker": order.ticker,
+                "reason": rth_reason,
+                "trading_time": virtual_sim_time.isoformat(),
+            })
+            return order
+
         order = Order(
             account_id=account_id,
             ticker=order_create.ticker,
@@ -93,25 +156,48 @@ class Simulator:
             stop_price=order_create.stop_price,
             time_in_force=order_create.time_in_force,
             client_order_id=order_create.client_order_id,
+            trading_time=virtual_sim_time,
+            sim_created_at=virtual_sim_time,
+            wall_received_at=wall_now,
+            sim_updated_at=virtual_sim_time,
+            created_at=virtual_sim_time,
+            server_received_at=wall_now,
+            updated_at=virtual_sim_time,
+            unseen_bars=unseen_bars,
         )
 
         # Estimate execution price for margin check
-        latest_bar = self.latest_bars.get(order.ticker)
-        if not latest_bar and hasattr(self, "feeder") and self.feeder:
+        order_bar = self.latest_bars.get(order.ticker)
+        if not order_bar and hasattr(self, "feeder") and self.feeder and self.feeder.timeline:
+            eff_bars = self.feeder.get_bars_for_time(virtual_sim_time)
+            order_bar = eff_bars.get(order.ticker)
+        if not order_bar and hasattr(self, "feeder") and self.feeder:
             cur_bars = self.feeder.get_bars_for_time(self.clock.current_time)
-            latest_bar = cur_bars.get(order.ticker)
-            if not latest_bar and self.feeder.timeline:
+            order_bar = cur_bars.get(order.ticker)
+            if not order_bar and self.feeder.timeline:
                 first_bars = self.feeder.get_bars_for_time(self.feeder.timeline[0])
-                latest_bar = first_bars.get(order.ticker)
-        if latest_bar:
+                order_bar = first_bars.get(order.ticker)
+        if order_bar:
             if order.order_type == OrderType.MARKET:
-                est_price = latest_bar.open
+                base_price = order_bar.open
             elif order.order_type == OrderType.LIMIT and order.limit_price:
-                est_price = min(order.limit_price, latest_bar.open) if order.side == OrderSide.BUY else max(order.limit_price, latest_bar.open)
+                base_price = min(order.limit_price, order_bar.open) if order.side == OrderSide.BUY else max(order.limit_price, order_bar.open)
             else:
-                est_price = order.limit_price or latest_bar.close
+                base_price = order.limit_price or order_bar.close
         else:
-            est_price = order.limit_price or 100.0
+            fallback = self.feeder.get_latest_price(order.ticker) if hasattr(self.feeder, "get_latest_price") else None
+            base_price = order.limit_price or fallback or 100.0
+
+        if order.order_type == OrderType.MARKET:
+            account = self.account_mgr.get_or_create_account(account_id)
+            cfg = account.internal_margin_config
+            buffer_rate = cfg.get("market_order_slippage_buffer", self.margin_config.market_order_slippage_buffer)
+            if order.side in (OrderSide.BUY, OrderSide.SELL_SHORT):
+                est_price = base_price * (1.0 + buffer_rate)
+            else:
+                est_price = base_price
+        else:
+            est_price = base_price
 
         # Validate with risk & margin engine
         valid, reject_reason = self.account_mgr.reserve_for_order(account_id, order, est_price)
@@ -119,7 +205,7 @@ class Simulator:
             order.status = OrderStatus.REJECTED
             order.reject_reason = reject_reason
             self.matcher.all_orders[order.order_id] = order
-            self.ledger.record("ORDER_REJECTED", account_id, self.clock.current_time, {
+            self.ledger.record("ORDER_REJECTED", account_id, virtual_sim_time, {
                 "order_id": order.order_id,
                 "ticker": order.ticker,
                 "reason": reject_reason,
@@ -128,7 +214,7 @@ class Simulator:
 
         # Register in matching engine
         self.matcher.add_order(order)
-        self.ledger.record("ORDER_ACCEPTED", account_id, self.clock.current_time, {
+        self.ledger.record("ORDER_ACCEPTED", account_id, virtual_sim_time, {
             "order_id": order.order_id,
             "ticker": order.ticker,
             "side": order.side.value,
@@ -137,41 +223,12 @@ class Simulator:
             "limit_price": order.limit_price,
         })
 
-        # If current minute bar is available, match immediately (continuous matching)
-        active_bar = self.latest_bars.get(order.ticker)
-        if not active_bar and hasattr(self, "feeder") and self.feeder:
-            cur_bars = self.feeder.get_bars_for_time(self.clock.current_time)
-            active_bar = cur_bars.get(order.ticker)
-            if active_bar:
-                self.latest_bars[order.ticker] = active_bar
-
-        if active_bar:
-            match = self.matcher.match_single_order(order, active_bar)
-            if match:
-                ord_matched, trade = match
-                self.all_trades.append(trade)
-                self.account_mgr.process_trade(trade)
-                self.account_mgr.release_reserved_for_order(trade.account_id, ord_matched)
-                self.ledger.record(
-                    "ORDER_FILLED" if ord_matched.status == OrderStatus.FILLED else "ORDER_PARTIALLY_FILLED",
-                    trade.account_id,
-                    self.clock.current_time,
-                    {
-                        "order_id": ord_matched.order_id,
-                        "trade_id": trade.trade_id,
-                        "ticker": trade.ticker,
-                        "price": trade.price,
-                        "quantity": trade.quantity,
-                        "commission": trade.commission,
-                    },
-                )
-                try:
-                    import asyncio
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._broadcast("ORDER_UPDATE", ord_matched.model_dump(mode="json")))
-                    loop.create_task(self._broadcast("TRADE_EXECUTION", trade.model_dump(mode="json")))
-                except RuntimeError:
-                    pass
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._broadcast("ORDER_UPDATE", order.model_dump(mode="json")))
+        except RuntimeError:
+            pass
 
         return order
 
@@ -186,187 +243,195 @@ class Simulator:
             })
         return order
 
-    async def step(self) -> Dict[str, Any]:
-        """Execute one simulation step (e.g. 1 minute)."""
-        sim_time = self.clock.step()
-
-        # 1. Fetch bars for all tickers
-        bars = self.feeder.get_bars_for_time(sim_time)
-        self.latest_bars.update(bars)
-
-        # 2. Update mark prices across all accounts
-        self.account_mgr.update_mark_prices(bars)
-
-        # 3. Match pending orders against incoming bars
-        new_trades: List[Trade] = []
-        for ticker, bar in bars.items():
-            matches = self.matcher.match_bar(bar)
-            for order, trade in matches:
-                self.all_trades.append(trade)
-                new_trades.append(trade)
-                # Update account balances and positions
-                self.account_mgr.process_trade(trade)
-                self.account_mgr.release_reserved_for_order(trade.account_id, order)
-                
-                # Log execution
-                self.ledger.record("ORDER_FILLED" if order.status == OrderStatus.FILLED else "ORDER_PARTIALLY_FILLED",
-                                   trade.account_id, sim_time, {
-                    "order_id": order.order_id,
-                    "trade_id": trade.trade_id,
-                    "ticker": trade.ticker,
-                    "price": trade.price,
-                    "quantity": trade.quantity,
-                    "commission": trade.commission,
-                })
-                # Broadcast order and trade update
-                await self._broadcast("ORDER_UPDATE", order.model_dump(mode="json"))
-                await self._broadcast("TRADE_EXECUTION", trade.model_dump(mode="json"))
-
-        # 4. Check margin calls and execute auto-liquidation if needed
-        for account in self.account_mgr.accounts.values():
-            mark_prices = {t: b.close for t, b in self.latest_bars.items()}
-            liq_orders = self.margin_engine.check_and_generate_liquidations(account, mark_prices)
-            for liq_order in liq_orders:
-                self.matcher.add_order(liq_order)
-                self.ledger.record("MARGIN_LIQUIDATION_SUBMITTED", account.account_id, sim_time, {
-                    "order_id": liq_order.order_id,
-                    "ticker": liq_order.ticker,
-                    "quantity": liq_order.quantity,
-                })
-                await self._broadcast("MARGIN_CALL", {
-                    "account_id": account.account_id,
-                    "timestamp": sim_time.isoformat(),
-                    "action": "AUTO_LIQUIDATION",
-                    "ticker": liq_order.ticker,
-                    "quantity": liq_order.quantity,
-                })
-
-            # 5. Accrue financing & borrowing fees
-            fees = self.margin_engine.accrue_financing_fees(account, minutes_elapsed=1)
-            if fees > 0:
-                self.ledger.record("FINANCING_FEES_ACCRUED", account.account_id, sim_time, {"fees": fees})
-
-            # 6. Record snapshot for performance analytics
-            self.ledger.record_snapshot(
-                account_id=account.account_id,
-                sim_time=sim_time,
-                cash=account.cash,
-                equity=account.equity,
-                realized_pnl=account.realized_pnl,
-                unrealized_pnl=account.unrealized_pnl,
-                gross_market_value=account.margin.gross_market_value,
-                leverage=account.margin.leverage,
-            )
-
-        # 7. Broadcast market bars and updated account info
-        bars_payload = {t: b.model_dump(mode="json") for t, b in bars.items()}
-        await self._broadcast("MARKET_BARS", {
-            "timestamp": sim_time.isoformat(),
-            "bars": bars_payload,
-        })
-
-        default_acc = self.account_mgr.get_or_create_account(self.account_mgr.default_account_id)
-        await self._broadcast("ACCOUNT_UPDATE", default_acc.model_dump(mode="json"))
-
-        return {
-            "timestamp": sim_time.isoformat(),
-            "bars": bars_payload,
-            "trades_count": len(new_trades),
-            "equity": default_acc.equity,
-        }
-
-    async def step_until(self, target_time: datetime, account_id: str = "trader_1") -> Dict[str, Any]:
+    async def step_to(self, target_time: datetime, account_id: str = "trader_1") -> Dict[str, Any]:
         """
-        Advance simulation from current T_anchor to target_time.
-        - If target_time <= current_time: ignored, returns current state.
-        - Sequentially processes all intermediate bars up to target_time.
-        - If target_time falls into a non-trading gap, advances to target_time and returns empty bars with success status.
-        - If margin liquidation is triggered, halts immediately at the liquidation timestamp, notifies client, and returns updated timestamp.
+        Advance simulation virtual time to target_time in America/New_York (ET).
+        - For each elapsed 1-minute interval [t, t+1m):
+          1. Matches pending orders against bar for interval [t, t+1m) (timestamped at t).
+          2. Filled trades are timestamped at t (1m before).
+          3. Advances clock to t+1m.
+          4. Takes snapshot at t+1m.
+        - Returns executed trades, updated orders, bars, cross_auction (if at open), and account.
         """
-        from simtrade.engine.feeder import normalize_ts
-        target_ts = normalize_ts(target_time)
-        current_ts = normalize_ts(self.clock.current_time)
+        from datetime import time, timedelta
+        from simtrade.utils import to_eastern_time
+        target_ts = to_eastern_time(target_time)
+        current_ts = to_eastern_time(self.clock.current_time)
 
-        # 1. Pure client request check: ignore if target is in the past or now
         if target_ts <= current_ts:
+            acc = self.account_mgr.get_or_create_account(account_id)
             return {
                 "status": "ignored",
-                "reason": "target_time is less than or equal to current T_anchor",
-                "current_time": self.clock.current_time.isoformat(),
+                "reason": f"target_time is less than or equal to current simulation time ({current_ts})",
                 "bars_processed": 0,
+                "current_time": self.clock.current_time.isoformat(),
+                "prev_time": current_ts.isoformat(),
                 "trades": [],
+                "orders": [],
                 "bars": {},
+                "account": acc.model_dump(mode="json"),
             }
 
-        all_new_trades: List[Dict[str, Any]] = []
-        total_bars_processed = 0
-        last_bars_payload: Dict[str, Any] = {}
+        all_new_trades: List[Trade] = []
+        updated_orders_map: Dict[str, Order] = {}
+        last_bars: Dict[str, Bar] = {}
+        bars_processed = 0
 
-        # 2. Advance step-by-step until virtual time reaches target_ts
-        while True:
-            if self.feeder.timeline:
-                if self.clock.cursor >= len(self.feeder.timeline):
-                    break
-                next_bar_time = normalize_ts(self.feeder.timeline[self.clock.cursor])
-                if next_bar_time > target_ts:
-                    break
-            else:
-                if normalize_ts(self.clock.current_time) >= target_ts:
-                    break
+        # Step forward minute-by-minute while within regular trading hours
+        while current_ts < target_ts:
+            c_time = current_ts.time()
 
-            step_result = await self.step()
-            total_bars_processed += 1
-            last_bars_payload = step_result.get("bars", {})
+            # If at or after market close (16:00 ET), we do not process regular bars.
+            # Jump directly across the gap to target_ts.
+            if c_time >= time(16, 0) or c_time < time(9, 30):
+                self.clock.set_time(target_ts, reason="GAP_JUMP")
+                current_ts = target_ts
+                last_bars = {}
+                break
 
-            # Collect trades
-            trade_cnt = step_result.get("trades_count", 0)
-            if trade_cnt > 0:
-                for t in self.all_trades[-trade_cnt:]:
-                    all_new_trades.append(t.model_dump(mode="json"))
+            interval_end = min(current_ts + timedelta(minutes=1), target_ts)
 
-            # Check if margin liquidation occurred during this bar
+            # Fetch 1m bar for elapsed interval [current_ts, interval_end)
+            bars = self.feeder.get_bars_for_time(interval_end)
+            if bars:
+                self.latest_bars.update(bars)
+                last_bars = bars
+
+            # 1. Match pending orders against this 1m bar
+            for ticker, bar in bars.items():
+                matches = self.matcher.match_bar(bar)
+                for order, trade in matches:
+                    # Treat order as filled 1m before (at current_ts)
+                    trade.sim_timestamp = current_ts
+                    trade.timestamp = current_ts
+                    self.all_trades.append(trade)
+                    all_new_trades.append(trade)
+                    updated_orders_map[order.order_id] = order
+
+                    self.account_mgr.process_trade(trade)
+                    self.account_mgr.release_reserved_for_order(trade.account_id, order)
+
+                    self.ledger.record(
+                        "ORDER_FILLED" if order.status == OrderStatus.FILLED else "ORDER_PARTIALLY_FILLED",
+                        trade.account_id,
+                        current_ts,
+                        {
+                            "order_id": order.order_id,
+                            "trade_id": trade.trade_id,
+                            "ticker": trade.ticker,
+                            "price": trade.price,
+                            "quantity": trade.quantity,
+                            "commission": trade.commission,
+                        },
+                    )
+
+            # 2. Advance clock to interval_end
+            self.clock.set_time(interval_end, reason="STEP_1M")
+            current_ts = interval_end
+            bars_processed += 1
+
+            # 3. Update mark prices and check margin
+            if bars:
+                self.account_mgr.update_mark_prices(bars)
+
+            for account in self.account_mgr.accounts.values():
+                mark_prices = {t: b.close for t, b in self.latest_bars.items()}
+                liq_orders = self.margin_engine.check_and_generate_liquidations(account, mark_prices)
+                for liq_order in liq_orders:
+                    self.matcher.add_order(liq_order)
+                    self.ledger.record("MARGIN_LIQUIDATION_SUBMITTED", account.account_id, current_ts, {
+                        "order_id": liq_order.order_id,
+                        "ticker": liq_order.ticker,
+                        "quantity": liq_order.quantity,
+                    })
+
+                positions_breakdown = {
+                    ticker: round(pos.market_value, 2)
+                    for ticker, pos in account.positions.items()
+                    if abs(pos.quantity) > 1e-6
+                }
+                self.ledger.record_snapshot(
+                    account_id=account.account_id,
+                    sim_time=current_ts,
+                    cash=account.cash,
+                    equity=account.equity,
+                    realized_pnl=account.realized_pnl,
+                    unrealized_pnl=account.unrealized_pnl,
+                    gross_market_value=account.margin.gross_market_value,
+                    leverage=account.margin.leverage,
+                    positions=positions_breakdown,
+                    reserved_cash=round(account.frozen_cash, 2),
+                )
+
+            # Check if default account had margin call
             acc = self.account_mgr.get_or_create_account(account_id)
             if acc.margin.is_margin_call:
+                bars_payload = {t: b.model_dump(mode="json") for t, b in last_bars.items()}
+                unseen_bars = self.drain_unseen_bars(account_id)
                 liq_info = {
                     "status": "LIQUIDATION_TRIGGERED",
                     "message": f"Account {account_id} equity (${acc.equity:.2f}) dropped below maintenance margin (${acc.margin.maintenance_margin_requirement:.2f})",
                     "current_time": self.clock.current_time.isoformat(),
                     "account_id": account_id,
                     "deficit": acc.margin.margin_call_amount,
-                    "bars_processed": total_bars_processed,
-                    "trades": all_new_trades,
-                    "bars": last_bars_payload,
+                    "bars_processed": bars_processed,
+                    "trades": [t.model_dump(mode="json") for t in all_new_trades],
+                    "orders": [o.model_dump(mode="json") for o in updated_orders_map.values()],
+                    "bars": bars_payload,
+                    "unseen_bars": unseen_bars,
+                    "account": acc.model_dump(mode="json"),
                 }
-                logger.warning(f"step_until halted at {self.clock.current_time} due to liquidation on account {account_id}")
+                logger.warning(f"step_to halted at {self.clock.current_time} due to liquidation on account {account_id}")
                 return liq_info
 
-        # 4. Handle non-trading gap (if target_ts is beyond the last processed bar)
-        if normalize_ts(self.clock.current_time) < target_ts:
-            self.clock.current_time = target_ts
-            if self.feeder.timeline:
-                for idx, t in enumerate(self.feeder.timeline):
-                    if normalize_ts(t) > target_ts:
-                        self.clock.cursor = idx
-                        break
-                else:
-                    self.clock.cursor = len(self.feeder.timeline)
+        # If arrived at session open (09:30), compute opening cross auction
+        cross_auction = {}
+        if current_ts.time() == time(9, 30):
+            open_bar_time = current_ts + timedelta(minutes=1)
+            open_bars = self.feeder.get_bars_for_time(open_bar_time)
+            if open_bars:
+                self.latest_bars.update(open_bars)
+            cross_auction = {t: {"price": b.open, "volume": 1.0} for t, b in self.latest_bars.items()}
 
-            last_bars_payload = {}
+        # Broadcast events for Web UI
+        bars_payload = {t: b.model_dump(mode="json") for t, b in last_bars.items()}
+        if bars_payload:
             await self._broadcast("MARKET_BARS", {
                 "timestamp": self.clock.current_time.isoformat(),
-                "bars": {},
-                "is_gap": True,
+                "bars": bars_payload,
             })
-            default_acc = self.account_mgr.get_or_create_account(account_id)
-            await self._broadcast("ACCOUNT_UPDATE", default_acc.model_dump(mode="json"))
+        for trade in all_new_trades:
+            await self._broadcast("TRADE_EXECUTION", trade.model_dump(mode="json"))
+        for order in updated_orders_map.values():
+            await self._broadcast("ORDER_UPDATE", order.model_dump(mode="json"))
+
+        acc = self.account_mgr.get_or_create_account(account_id)
+        await self._broadcast("ACCOUNT_UPDATE", acc.model_dump(mode="json"))
+
+        unseen_bars = self.drain_unseen_bars(account_id)
 
         return {
             "status": "TARGET_REACHED",
             "current_time": self.clock.current_time.isoformat(),
-            "bars_processed": total_bars_processed,
-            "trades": all_new_trades,
-            "bars": last_bars_payload,
+            "bars_processed": bars_processed,
+            "trades": [t.model_dump(mode="json") for t in all_new_trades],
+            "orders": [o.model_dump(mode="json") for o in updated_orders_map.values()],
+            "bars": bars_payload,
+            "unseen_bars": unseen_bars,
+            "cross_auction": cross_auction,
+            "account": acc.model_dump(mode="json"),
         }
+
+    async def step_until(self, target_time: datetime, account_id: str = "trader_1") -> Dict[str, Any]:
+        return await self.step_to(target_time, account_id=account_id)
+
+    async def step(self, account_id: Optional[str] = None) -> Dict[str, Any]:
+        acc_id = account_id or self.account_mgr.default_account_id
+        target = self.clock.current_time + timedelta(minutes=1)
+        res = await self.step_to(target, account_id=acc_id)
+        res["timestamp"] = res["current_time"]
+        res["trades_count"] = len(res.get("trades", []))
+        return res
 
     async def _run_loop(self):
         """Asynchronous playback loop respecting speed multiplier."""
@@ -379,13 +444,44 @@ class Simulator:
                     logger.error(f"Error during simulation step: {e}", exc_info=True)
             await self.clock.sleep_for_speed()
 
-    def start(self):
-        """Start or resume the simulation loop."""
+    def start(self, start_time: Optional[datetime] = None) -> Dict[str, Any]:
+        """Start or initialize simulation at the specified start_time (ET)."""
+        from simtrade.utils import to_eastern_time
+        if start_time:
+            self.clock.set_time(to_eastern_time(start_time), reason="START_TIME")
+        elif self.feeder.timeline:
+            first_ts = self.feeder.timeline[0]
+            if first_ts.time() == time(9, 31):
+                self.clock.set_time(first_ts - timedelta(minutes=1), reason="START_DEFAULT")
+            else:
+                self.clock.set_time(first_ts, reason="START_DEFAULT")
         self.clock.is_running = True
-        self.clock.resume()
-        if self._loop_task is None or self._loop_task.done():
-            self._loop_task = asyncio.create_task(self._run_loop())
-        logger.info("Simulator started")
+        self.clock.is_paused = False
+
+        c_time = self.clock.current_time
+        if c_time.time() == time(9, 30):
+            open_bar_time = c_time + timedelta(minutes=1)
+            open_bars = self.feeder.get_bars_for_time(open_bar_time)
+            if open_bars:
+                self.latest_bars.update(open_bars)
+            cross_auction = {
+                t: {"price": b.open, "volume": 1.0}
+                for t, b in self.latest_bars.items()
+            }
+        else:
+            bars = self.feeder.get_bars_for_time(c_time)
+            if bars:
+                self.latest_bars.update(bars)
+            cross_auction = {
+                t: {"price": b.open, "volume": 1.0}
+                for t, b in self.latest_bars.items()
+            }
+        logger.info(f"Simulator started at {self.clock.current_time.isoformat()}")
+        return {
+            "status": "STARTED",
+            "current_time": self.clock.current_time.isoformat(),
+            "cross_auction": cross_auction,
+        }
 
     def pause(self):
         """Pause playback."""
@@ -410,16 +506,19 @@ class Simulator:
                     if t >= start_time:
                         idx = i
                         break
-            self.clock.current_time = self.feeder.timeline[idx]
-            self.clock.cursor = idx
+            reset_ts = self.feeder.timeline[idx]
+            self.clock.cursor = idx + 1
         elif start_time:
-            self.clock.current_time = start_time
+            reset_ts = start_time
         else:
-            self.clock.current_time = self.feeder.start_time or datetime(2026, 1, 5, 9, 30, 0)
+            reset_ts = self.feeder.start_time or datetime(2026, 1, 5, 9, 30, 0)
+
+        self.clock.set_time(reset_ts, reason="SIMULATOR_RESET")
 
         self.clock.step_count = 0
         self.matcher.active_orders.clear()
         self.latest_bars.clear()
+        self.account_bar_cursors.clear()
         # Seed initial market bar prices at reset time
         bars = self.feeder.get_bars_for_time(self.clock.current_time)
         self.latest_bars.update(bars)
@@ -430,14 +529,32 @@ class Simulator:
         total_bars = len(self.feeder.timeline)
         is_finished = (self.clock.cursor >= total_bars) if total_bars > 0 else False
         progress_pct = round((self.clock.cursor / max(1, total_bars)) * 100, 2) if total_bars > 0 else 0.0
+        current_idx = max(0, self.clock.cursor - 1) if self.clock.step_count > 0 else 0
+
+        local_start = getattr(self.clock, "local_start_time", None)
+        sim_start = getattr(self.clock, "sim_trade_start_time", None)
+        if not sim_start:
+            if self.feeder.timeline:
+                first_ts = self.feeder.timeline[0]
+                if first_ts.time() == time(9, 31):
+                    sim_start = first_ts - timedelta(minutes=1)
+                else:
+                    sim_start = first_ts
+            else:
+                sim_start = None
+
+        trading_dates = sorted(list({t.date().isoformat() for t in self.feeder.timeline}))
 
         return {
-            "start_time": self.feeder.timeline[0].isoformat() if self.feeder.timeline else None,
+            "local_start_time": local_start.isoformat() if local_start else None,
+            "sim_trade_start_time": sim_start.isoformat() if sim_start else None,
+            "start_time": sim_start.isoformat() if sim_start else None,
             "end_time": self.feeder.timeline[-1].isoformat() if self.feeder.timeline else None,
+            "trading_dates": trading_dates,
             "current_time": self.clock.current_time.isoformat(),
             "total_bars": total_bars,
             "current_step": self.clock.step_count,
-            "cursor": self.clock.cursor,
+            "cursor": current_idx,
             "progress_pct": progress_pct,
             "is_finished": is_finished,
             "speed_multiplier": self.clock.speed_multiplier,

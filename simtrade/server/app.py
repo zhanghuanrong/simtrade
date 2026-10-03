@@ -66,7 +66,14 @@ def create_app(
     @app.get("/dashboard", response_class=HTMLResponse, tags=["Dashboard"])
     async def serve_dashboard():
         if ui_file.exists():
-            return FileResponse(ui_file)
+            return FileResponse(
+                ui_file,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
         return HTMLResponse("<h1>SimTrade Dashboard UI not found</h1>")
 
     return app

@@ -93,5 +93,11 @@ async def test_client_sdk_workflow(running_server):
     step_until_res = await client.step_until(target_dt_2)
     assert step_until_res["status"] == "TARGET_REACHED"
     assert step_until_res["bars_processed"] == 3
+    assert "unseen_bars" in step_until_res
+    assert len(step_until_res["unseen_bars"]) == 3
+
+    # 7. Test drain_unseen_bars (should be empty as step_until just drained them)
+    empty_unseen = await client.drain_unseen_bars()
+    assert len(empty_unseen) == 0
 
     await client.close()

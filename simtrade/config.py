@@ -22,6 +22,9 @@ class MarginConfig(BaseModel):
     auto_liquidate_on_call: bool = Field(default=True, description="Automatically liquidate positions when equity < maintenance margin")
     liquidation_penalty_rate: float = Field(default=0.01, ge=0.0, le=0.10, description="Penalty fee charged upon forced liquidation")
 
+    # Slippage / overflow protection for market orders
+    market_order_slippage_buffer: float = Field(default=0.05, ge=0.0, description="Buffer rate applied to estimated price of market orders to prevent cash/margin overflow (default: 0.05 = 5%)")
+
 
 class MatchingConfig(BaseModel):
     """Order matching engine configuration."""

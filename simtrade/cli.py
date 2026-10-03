@@ -22,7 +22,7 @@ console = Console()
 def serve(
     host: str = typer.Option("0.0.0.0", help="Host interface to bind"),
     port: int = typer.Option(6688, help="Port to listen on"),
-    tickers: str = typer.Option("AAPL,NVDA,TSLA,MSFT", help="Comma-separated tickers (or 'ALL')"),
+    tickers: str = typer.Option("ALL", help="Comma-separated tickers (or 'ALL')"),
     data_file: Optional[str] = typer.Option(None, help="Path to historical parquet or CSV file (defaults to data/1m_20260817_now.parquet if exists)"),
     data_dir: Optional[str] = typer.Option("data", help="Directory containing historical Parquet/CSV data"),
 ):

@@ -19,7 +19,11 @@ class PassSummary(BaseModel):
     pass_id: str
     account_id: str
     tag: Optional[str] = None
-    created_at: datetime = Field(default_factory=utc_now)
+    wall_created_at: datetime = Field(default_factory=utc_now)
+    wall_completed_at: Optional[datetime] = None
+    sim_start_time: Optional[datetime] = None
+    sim_end_time: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     initial_capital: float = 100_000.0
     ending_equity: float = 100_000.0
@@ -35,6 +39,16 @@ class PassSummary(BaseModel):
     max_drawdown_pct: float = 0.0
     sharpe_ratio: float = 0.0
     positions_count: int = 0
+
+    def model_post_init(self, __context):
+        if self.created_at is None:
+            self.created_at = self.wall_created_at
+        else:
+            self.wall_created_at = self.created_at
+        if self.completed_at is None:
+            self.completed_at = self.wall_completed_at
+        else:
+            self.wall_completed_at = self.completed_at
 
 
 class PassRecord(BaseModel):

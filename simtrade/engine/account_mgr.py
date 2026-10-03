@@ -41,13 +41,26 @@ class AccountManager:
         """Configure or re-initialize account settings, cash, initial positions, and margin terms."""
         mark_prices = mark_prices or {}
         custom_cfg = {}
-        if req.leverage:
+        internal_cfg = {}
+        if req.leverage is not None:
+            # Client-facing setup: reflect client's requested leverage and initial margin rate
             custom_cfg["max_leverage"] = req.leverage
-            custom_cfg["initial_margin_rate"] = 1.0 / req.leverage
-        if req.initial_margin_rate:
+            custom_cfg["initial_margin_rate"] = req.initial_margin_rate if req.initial_margin_rate is not None else (1.0 / req.leverage)
+
+            # Internally, add 1.0 to leverage without letting client know first
+            internal_leverage = req.leverage + 1.0
+            internal_cfg["max_leverage"] = internal_leverage
+            internal_cfg["initial_margin_rate"] = 1.0 / internal_leverage
+        elif req.initial_margin_rate is not None:
             custom_cfg["initial_margin_rate"] = req.initial_margin_rate
-        if req.maintenance_margin_rate:
+            internal_cfg["initial_margin_rate"] = req.initial_margin_rate
+
+        if req.maintenance_margin_rate is not None:
             custom_cfg["maintenance_margin_rate"] = req.maintenance_margin_rate
+            internal_cfg["maintenance_margin_rate"] = req.maintenance_margin_rate
+        if req.market_order_slippage_buffer is not None:
+            custom_cfg["market_order_slippage_buffer"] = req.market_order_slippage_buffer
+            internal_cfg["market_order_slippage_buffer"] = req.market_order_slippage_buffer
 
         acc = Account(
             account_id=req.account_id,
@@ -56,6 +69,8 @@ class AccountManager:
             initial_capital=0.0,
             custom_margin_config=custom_cfg if custom_cfg else None,
         )
+        if internal_cfg:
+            acc._internal_margin_config = internal_cfg
 
         # Set up initial positions if specified (entry price always equals current mark price)
         net_positions_value = 0.0
@@ -120,7 +135,7 @@ class AccountManager:
 
         # For buy limit orders, reserve margin equity to prevent overselling liquid capital
         if order.side == OrderSide.BUY and order.order_type == OrderType.LIMIT and order.limit_price:
-            cfg = account.custom_margin_config or {}
+            cfg = account.internal_margin_config
             init_rate = cfg.get("initial_margin_rate", self.margin_engine.config.initial_margin_rate)
             reserved_amount = order.quantity * order.limit_price * init_rate
             order.reserved_frozen_cash = reserved_amount
@@ -135,7 +150,7 @@ class AccountManager:
             account.frozen_cash = max(0.0, account.frozen_cash - order.reserved_frozen_cash)
             order.reserved_frozen_cash = 0.0
         elif order.side == OrderSide.BUY and order.limit_price:
-            cfg = account.custom_margin_config or {}
+            cfg = account.internal_margin_config
             init_rate = cfg.get("initial_margin_rate", self.margin_engine.config.initial_margin_rate)
             reserved_amount = order.quantity * order.limit_price * init_rate
             account.frozen_cash = max(0.0, account.frozen_cash - reserved_amount)

@@ -2,6 +2,9 @@
 
 SimTrade is an event-driven paper trading simulation server designed for quantitative researchers, algorithmic trading bots, and backtest-to-paper replay. It provides multi-ticker 1-minute OHLCV replay, margin policy enforcement, real-time WebSocket streaming, a REST API with Swagger documentation, and a visual Web Dashboard.
 
+> [!NOTE]
+> For the complete specification on time handling, regular trading hours, server clock authority, and reactive client time tracking, see the [Time Management Specification](TIME_MANAGEMENT.md).
+
 ---
 
 ## Table of Contents

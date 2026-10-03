@@ -119,15 +119,18 @@ class MarginEngine:
                 is_opening = True
 
         if is_opening:
-            # Margin requirement for this new order respecting account custom config
-            cfg = account.custom_margin_config or {}
+            # Margin requirement for this new order respecting account internal margin config
+            cfg = account.internal_margin_config
             init_rate = cfg.get("initial_margin_rate", self.config.initial_margin_rate)
             short_init_rate = cfg.get("short_initial_margin_rate", self.config.short_initial_margin_rate)
             req_rate = init_rate if order.side == OrderSide.BUY else short_init_rate
             required_margin = notional * req_rate
 
-            # Available uncommitted equity considering frozen cash
-            available_equity = max(0.0, account.equity - account.margin.initial_margin_requirement - account.frozen_cash)
+            # Available uncommitted equity considering frozen cash and internal initial margin requirements
+            total_long_val = sum(p.quantity * p.current_price for p in account.positions.values() if p.quantity > 0)
+            total_short_val = sum(abs(p.quantity) * p.current_price for p in account.positions.values() if p.quantity < 0)
+            internal_init_req = (total_long_val * init_rate) + (total_short_val * short_init_rate)
+            available_equity = max(0.0, account.equity - internal_init_req - account.frozen_cash)
             max_bp = round(available_equity / req_rate, 2)
             if available_equity < required_margin:
                 return False, (

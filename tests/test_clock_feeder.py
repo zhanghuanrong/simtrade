@@ -2,10 +2,11 @@ from datetime import datetime, timedelta
 import pytest
 from simtrade.engine.clock import SimClock
 from simtrade.engine.feeder import DataFeeder, SyntheticDataGenerator
+from simtrade.utils import NY_TZ, to_eastern_time
 
 
 def test_clock_stepping():
-    start = datetime(2026, 1, 5, 9, 30, 0)
+    start = datetime(2026, 1, 5, 9, 30, 0, tzinfo=NY_TZ)
     clock = SimClock(start_time=start, speed_multiplier=1.0, interval_seconds=60)
     
     assert clock.current_time == start
@@ -54,3 +55,23 @@ def test_historical_csv_feeder(tmp_path):
     b0 = feeder.get_bars_for_time(dt)
     assert "TEST" in b0
     assert b0["TEST"].open == 100.0
+
+
+def test_clock_discrete_stepping():
+    start = datetime(2026, 1, 5, 9, 30, 0, tzinfo=NY_TZ)
+    clock = SimClock(start_time=start)
+    
+    assert clock.now() == start
+    assert clock.current_time == start
+
+    # Advancing step_to updates current time directly
+    t1 = clock.step_to(datetime(2026, 1, 5, 9, 31, 0, tzinfo=NY_TZ))
+    assert t1 == datetime(2026, 1, 5, 9, 31, 0, tzinfo=NY_TZ)
+    assert clock.now() == datetime(2026, 1, 5, 9, 31, 0, tzinfo=NY_TZ)
+
+    # set_time directly sets current time
+    target = datetime(2026, 1, 5, 11, 0, 0, tzinfo=NY_TZ)
+    clock.set_time(target, reason="STEP_TO")
+    assert clock.current_time == target
+    assert clock.now() == target
+

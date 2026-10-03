@@ -1,15 +1,16 @@
-"""Simulation clock engine managing virtual time, pace, and step progression."""
+"""Simulation clock engine managing pure discrete virtual simulation time (America/New_York ET)."""
 
-import asyncio
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 import logging
+
+from simtrade.utils import to_eastern_time, NY_TZ
 
 logger = logging.getLogger(__name__)
 
 
 class SimClock:
-    """Manages virtual simulation time and playback pacing."""
+    """Manages discrete virtual simulation time in Eastern Time without wall-clock dependencies."""
 
     def __init__(
         self,
@@ -18,66 +19,101 @@ class SimClock:
         interval_seconds: int = 60,
         timeline: Optional[List[datetime]] = None,
     ):
-        self.timeline = timeline or []
+        self.sim_timeline: List[datetime] = [to_eastern_time(t) for t in (timeline or [])]
         self.cursor = 0
-        if self.timeline:
-            self.current_time = self.timeline[0]
+
+        if self.sim_timeline:
+            self.sim_start_time: datetime = self.sim_timeline[0]
             self.cursor = 1
+        elif start_time:
+            self.sim_start_time: datetime = to_eastern_time(start_time)
         else:
-            self.current_time = start_time or datetime(2026, 1, 5, 9, 30, 0)
-        self.interval = timedelta(seconds=interval_seconds)
-        self.speed_multiplier = speed_multiplier  # 1.0 = real-time, 60.0 = 1 sec per min, 0 = instant
+            self.sim_start_time: datetime = datetime(2026, 1, 5, 9, 30, 0, tzinfo=NY_TZ)
+
+        self.sim_current_time: datetime = self.sim_start_time
+        self.sim_interval: timedelta = timedelta(seconds=interval_seconds)
+        self.speed_multiplier: float = speed_multiplier
         self.is_running: bool = False
-        self.is_paused: bool = True
+        self.is_paused: bool = False
         self.step_count: int = 0
         self._listeners: List[Callable[[datetime], None]] = []
 
-    def set_time(self, new_time: datetime):
-        self.current_time = new_time
+    @property
+    def current_time(self) -> datetime:
+        return self.sim_current_time
 
-    def set_speed(self, speed: float):
-        """Set simulation speed. 1.0 = 60s wall clock per simulated min. 60.0 = 1s per min."""
-        self.speed_multiplier = max(0.0, float(speed))
-        logger.info(f"Simulation speed updated to {self.speed_multiplier}x")
+    @current_time.setter
+    def current_time(self, val: datetime):
+        self.sim_current_time = to_eastern_time(val)
 
-    def pause(self):
-        self.is_paused = True
-        logger.info("Simulation clock paused")
+    @property
+    def timeline(self) -> List[datetime]:
+        return self.sim_timeline
 
-    def resume(self):
-        self.is_paused = False
-        logger.info("Simulation clock resumed")
+    @timeline.setter
+    def timeline(self, val: List[datetime]):
+        self.sim_timeline = [to_eastern_time(t) for t in val]
 
-    def step(self) -> datetime:
-        """Advance the simulation time by one interval or the next timeline bar."""
-        if self.timeline and self.cursor < len(self.timeline):
-            self.current_time = self.timeline[self.cursor]
-            self.cursor += 1
-        else:
-            self.current_time += self.interval
+    @property
+    def interval(self) -> timedelta:
+        return self.sim_interval
+
+    @interval.setter
+    def interval(self, val: timedelta):
+        self.sim_interval = val
+
+    def now(self) -> datetime:
+        """
+        Return the current virtual simulation time in America/New_York (ET).
+        Independent of local machine wall-clock time.
+        """
+        return self.sim_current_time
+
+    def set_time(self, new_sim_time: datetime, reason: str = "SET_TIME"):
+        """Explicitly set the current virtual simulation time."""
+        self.sim_current_time = to_eastern_time(new_sim_time)
+        logger.debug(f"[CLOCK] Time set to {self.sim_current_time.isoformat()} ({reason})")
+
+    def step_to(self, target_time: datetime) -> datetime:
+        """Advance virtual simulation time directly to target_time."""
+        self.sim_current_time = to_eastern_time(target_time)
         self.step_count += 1
         for listener in self._listeners:
             try:
-                listener(self.current_time)
+                listener(self.sim_current_time)
             except Exception as e:
                 logger.error(f"Error in clock listener: {e}")
-        return self.current_time
+        return self.sim_current_time
+
+    def step(self) -> datetime:
+        """Advance the simulation time by one interval or the next timeline bar."""
+        if self.sim_timeline and self.cursor < len(self.sim_timeline):
+            self.sim_current_time = self.sim_timeline[self.cursor]
+            self.cursor += 1
+        else:
+            self.sim_current_time += self.sim_interval
+        self.step_count += 1
+
+        for listener in self._listeners:
+            try:
+                listener(self.sim_current_time)
+            except Exception as e:
+                logger.error(f"Error in clock listener: {e}")
+        return self.sim_current_time
 
     def add_listener(self, callback: Callable[[datetime], None]):
         self._listeners.append(callback)
 
-    async def sleep_for_speed(self):
-        """Sleep proportionally to virtual interval based on speed_multiplier."""
-        if self.speed_multiplier <= 0:
-            # Max speed: yield control briefly to event loop so tasks/websockets can process
-            await asyncio.sleep(0.001)
-            return
+    def pause(self):
+        self.is_paused = True
 
-        # Virtual interval is e.g. 60 seconds.
-        # If speed = 1.0, wait 60s.
-        # If speed = 60.0, wait 1.0s.
-        # If speed = 120.0, wait 0.5s.
-        wall_wait = self.interval.total_seconds() / self.speed_multiplier
-        # Clamp to at least 1ms to allow IO
-        wall_wait = max(0.001, wall_wait)
-        await asyncio.sleep(wall_wait)
+    def resume(self):
+        self.is_paused = False
+
+    def set_speed(self, speed: float):
+        self.speed_multiplier = float(speed)
+
+    async def sleep_for_speed(self):
+        """No-op yield in discrete mode."""
+        import asyncio
+        await asyncio.sleep(0.0001)

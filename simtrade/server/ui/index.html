@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SimTrade | Order History & Account Dashboard</title>
+  <title>SimTrade | Simulation Passes & Order Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -18,6 +18,7 @@
       --accent-blue: #38bdf8;
       --accent-amber: #f59e0b;
       --accent-purple: #a855f7;
+      --accent-gold: #facc15;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -53,10 +54,10 @@
       gap: 4px;
     }
     .badge-pass { background: rgba(168, 85, 247, 0.2); color: var(--accent-purple); border: 1px solid var(--accent-purple); }
-    .badge-live { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
     .badge-success { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
     .badge-danger { background: rgba(239, 68, 68, 0.2); color: var(--accent-red); border: 1px solid var(--accent-red); }
     .badge-amber { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); border: 1px solid var(--accent-amber); }
+    .badge-blue { background: rgba(56, 189, 248, 0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
 
     .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     button {
@@ -73,8 +74,19 @@
     button:hover { background: #475569; }
     button.btn-primary { background: #0284c7; border-color: #38bdf8; }
     button.btn-primary:hover { background: #0369a1; }
-    button.btn-success { background: #059669; border-color: #10b981; }
-    button.btn-active { background: #0284c7; color: #fff; border-color: #38bdf8; }
+    button.btn-locate {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--accent-blue);
+      color: var(--accent-blue);
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button.btn-locate:hover {
+      background: var(--accent-blue);
+      color: #0f172a;
+    }
 
     /* Metadata Bar */
     .metadata-bar {
@@ -124,6 +136,8 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .panel-title {
       font-size: 14px;
@@ -131,6 +145,32 @@
       color: var(--accent-blue);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .res-buttons {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      background: var(--bg-dark);
+      padding: 3px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .res-btn {
+      padding: 3px 8px;
+      font-size: 11px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .res-btn.active {
+      background: #0284c7;
+      color: #fff;
+      font-weight: 700;
     }
 
     /* Tabbed Detailed Inspection */
@@ -189,7 +229,7 @@
 
     /* Tables */
     .table-container {
-      max-height: 480px;
+      max-height: 520px;
       overflow-y: auto;
     }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -206,9 +246,14 @@
     }
     td { padding: 8px 12px; border-bottom: 1px solid rgba(51, 65, 85, 0.4); }
     tr:hover { background: rgba(51, 65, 85, 0.25); }
+    tr.order-row-highlight {
+      background: rgba(56, 189, 248, 0.2) !important;
+      outline: 2px solid var(--accent-blue);
+      transition: background 0.3s;
+    }
 
     .tag-buy { color: var(--accent-green); font-weight: 700; }
-    .tag-sell { color: var(--accent-blue); font-weight: 700; }
+    .tag-sell { color: var(--accent-red); font-weight: 700; }
     .tag-short { color: var(--accent-purple); font-weight: 700; }
 
     /* Failure Reason Callout */
@@ -253,16 +298,15 @@
   <header>
     <div class="brand">
       <h1>SimTrade Server</h1>
-      <span id="header-mode-badge" class="badge badge-pass">Pass Analysis</span>
+      <span id="header-mode-badge" class="badge badge-pass">🏁 Finished Simulation Pass</span>
       
-      <!-- Account / Finished Pass Selector -->
+      <!-- Finished Pass Selector -->
       <div style="display: flex; align-items: center; gap: 8px; margin-left: 12px;">
-        <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Account / Pass:</span>
+        <span style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Finished Pass:</span>
         <select id="pass-selector" onchange="onPassSelect(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:6px 12px; border-radius:6px; font-weight:600; font-size:13px; min-width:320px;">
-          <option value="">Loading accounts & passes...</option>
+          <option value="">Loading finished passes...</option>
         </select>
-        <button onclick="fetchPassesAndAccounts()" title="Refresh list" style="padding: 6px 10px; font-size: 12px;">↻ Refresh</button>
-        <button id="auto-refresh-btn" onclick="toggleAutoRefresh()" style="padding: 6px 10px; font-size: 12px;" title="Automatically poll account status every 2 seconds">Auto: OFF</button>
+        <button onclick="fetchPasses()" title="Refresh passes" style="padding: 6px 10px; font-size: 12px;">↻ Refresh</button>
       </div>
     </div>
 
@@ -275,23 +319,23 @@
     </div>
   </header>
 
-  <!-- Pass / Account Run Metadata Bar -->
+  <!-- Pass Metadata Bar -->
   <div class="metadata-bar">
     <div>
-      <span>Account: </span><strong id="meta-account-id" style="color:var(--accent-blue);">--</strong>
+      <span>Pass ID: </span><strong id="meta-account-id" style="color:var(--accent-blue);">--</strong>
       <span style="margin: 0 8px; color:var(--border);">|</span>
-      <span>Tag: </span><strong id="meta-tag" style="color:var(--text-main);">--</strong>
+      <span>Tag / Account: </span><strong id="meta-tag" style="color:var(--text-main);">--</strong>
       <span style="margin: 0 8px; color:var(--border);">|</span>
-      <span>Status: </span><span id="meta-health-badge" class="badge badge-success">HEALTHY</span>
+      <span>Status: </span><span id="meta-health-badge" class="badge badge-success">COMPLETED</span>
     </div>
     <div>
-      <span>Last Updated: </span><strong id="meta-completed" style="color:var(--text-main);">--</strong>
+      <span>Completed (ET): </span><strong id="meta-completed" style="color:var(--text-main);">--</strong>
     </div>
     <div>
       <span>Orders: </span><strong id="meta-orders-count" style="color:var(--accent-blue);">0</strong>
       (<span id="meta-orders-failed-count" style="color:var(--accent-red); font-weight:700;">0 Failed</span>)
       <span style="margin: 0 8px; color:var(--border);">|</span>
-      <span>Trades Filled: </span><strong id="meta-trades-count" style="color:var(--accent-green);">0</strong>
+      <span>Trades Executed: </span><strong id="meta-trades-count" style="color:var(--accent-green);">0</strong>
     </div>
   </div>
 
@@ -340,14 +384,45 @@
     </div>
   </div>
 
-  <!-- Main Valuation Curve -->
-  <div class="chart-panel">
+  <!-- Main Asset Composition & Equity Trend Panel -->
+  <div id="chart-container-panel" class="chart-panel">
     <div class="panel-header">
-      <div class="panel-title">Portfolio Equity Curve (<span id="chart-pass-label">--</span>)</div>
-      <span id="chart-date-range" style="font-size: 12px; color: var(--text-muted);">--</span>
+      <div class="panel-title">
+        <span>Portfolio Asset Composition & Equity Trend (<span id="chart-pass-label">--</span>) &mdash; <span style="font-size:12px; color:var(--accent-blue); font-weight:normal;">Regular Trading Hours (09:30&ndash;16:00 ET)</span></span>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div class="res-buttons">
+          <span style="font-size:11px; color:var(--text-muted); padding: 0 4px; font-weight:600;">View:</span>
+          <button id="view-combined" class="res-btn active" onclick="setChartViewMode('combined')">Combined</button>
+          <button id="view-equity" class="res-btn" onclick="setChartViewMode('equity')">Net Equity Only</button>
+          <button id="view-allocation" class="res-btn" onclick="setChartViewMode('allocation')">Asset Allocation</button>
+        </div>
+        <div class="res-buttons">
+          <span style="font-size:11px; color:var(--text-muted); padding: 0 4px; font-weight:600;">Resolution:</span>
+          <button id="res-auto" class="res-btn active" onclick="setChartResolution('auto')">Auto</button>
+          <button id="res-1m" class="res-btn" onclick="setChartResolution('1m')">1m</button>
+          <button id="res-5m" class="res-btn" onclick="setChartResolution('5m')">5m</button>
+          <button id="res-15m" class="res-btn" onclick="setChartResolution('15m')">15m</button>
+        </div>
+        <span id="chart-date-range" style="font-size: 12px; color: var(--text-muted);">--</span>
+      </div>
     </div>
-    <div style="height: 250px;">
+    <div style="height: 350px;">
       <canvas id="equityChart"></canvas>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; font-size:11px; color:var(--text-muted); padding: 0 4px; flex-wrap:wrap; gap:8px;">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <span><span style="display:inline-block; width:10px; height:10px; background:#475569; border-radius:2px; margin-right:4px;"></span>Cash (Bottom)</span>
+        <span><span style="display:inline-block; width:10px; height:10px; background:#38bdf8; border-radius:2px; margin-right:4px;"></span>Positions (Acquire Order)</span>
+        <span><span style="display:inline-block; width:14px; height:3px; background:#facc15; margin-right:4px; vertical-align:middle;"></span>Net Total Equity</span>
+        <span><span style="display:inline-block; width:12px; height:12px; background:rgba(56, 189, 248, 0.22); border:1px solid rgba(56, 189, 248, 0.6); border-radius:2px; vertical-align:middle; margin-right:4px;"></span>Alternating Days</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <span><span style="color:#10b981; font-weight:700;">▲</span> BUY Order</span>
+        <span><span style="color:#ef4444; font-weight:700;">▼</span> SELL Order</span>
+        <span><span style="color:#f59e0b; font-weight:700;">✖</span> REJECTED / FAILED</span>
+        <span style="font-style:italic;">(All times in America/New_York ET)</span>
+      </div>
     </div>
   </div>
 
@@ -379,8 +454,9 @@
       <table>
         <thead>
           <tr>
+            <th>Locate</th>
             <th>#</th>
-            <th>Time</th>
+            <th>Time (ET)</th>
             <th>Order ID</th>
             <th>Ticker</th>
             <th>Side</th>
@@ -393,7 +469,7 @@
           </tr>
         </thead>
         <tbody id="orders-body">
-          <tr><td colspan="11" style="color:var(--text-muted); text-align:center;">No orders loaded</td></tr>
+          <tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No orders loaded</td></tr>
         </tbody>
       </table>
     </div>
@@ -404,7 +480,7 @@
         <thead>
           <tr>
             <th>#</th>
-            <th>Sim Timestamp</th>
+            <th>Execution Time (ET)</th>
             <th>Trade ID</th>
             <th>Order ID</th>
             <th>Ticker</th>
@@ -416,7 +492,7 @@
           </tr>
         </thead>
         <tbody id="trades-body">
-          <tr><td colspan="10" style="color:var(--text-muted); text-align:center;">No trades executed</td></tr>
+          <tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>
         </tbody>
       </table>
     </div>
@@ -436,7 +512,7 @@
           </tr>
         </thead>
         <tbody id="positions-body">
-          <tr><td colspan="7" style="color:var(--text-muted); text-align:center;">No open positions (100% Cash)</td></tr>
+          <tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:30px;">No open positions (100% Cash)</td></tr>
         </tbody>
       </table>
     </div>
@@ -448,7 +524,7 @@
           <tr>
             <th>Pass ID</th>
             <th>Tag / Account</th>
-            <th>Completed At</th>
+            <th>Completed (ET)</th>
             <th>Initial Capital</th>
             <th>Ending Equity</th>
             <th>Net Profit</th>
@@ -460,7 +536,7 @@
           </tr>
         </thead>
         <tbody id="catalog-body">
-          <tr><td colspan="11" style="color:var(--text-muted); text-align:center;">No finished passes recorded yet</td></tr>
+          <tr><td colspan="11" style="color:var(--text-muted); text-align:center; padding:30px;">No finished passes recorded yet</td></tr>
         </tbody>
       </table>
     </div>
@@ -472,13 +548,13 @@
           <tr>
             <th>#</th>
             <th>Event Type</th>
-            <th>Sim Time</th>
+            <th>Sim Time (ET)</th>
             <th>Account</th>
             <th>Details</th>
           </tr>
         </thead>
         <tbody id="ledger-body">
-          <tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No audit ledger entries available</td></tr>
+          <tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:30px;">No audit ledger entries available</td></tr>
         </tbody>
       </table>
     </div>
@@ -500,56 +576,267 @@
   <script>
     let equityChart = null;
     let currentPassRecord = null;
-    let currentActiveAccount = null;
     let currentOrdersList = [];
     let currentTradesList = [];
     let currentFilterStatus = 'ALL';
     let currentSearchTerm = '';
     let allPasses = [];
-    let allActiveAccounts = [];
-    let autoRefreshTimer = null;
-    let isAutoRefreshOn = false;
+    let currentResolution = 'auto'; // 'auto' | '1m' | '5m' | '15m'
+    let currentViewMode = 'combined'; // 'combined' | 'equity' | 'allocation'
 
-    const equityLabels = [];
-    const equityData = [];
+    // Order points mapping for locating
+    let mappedOrderPoints = []; // [{order_id, timeIndex, equity, order}]
+    let chartTimeBuckets = [];  // array of bucket sim_times
+    let currentPassBucketMap = null; // map of bTime -> snapshot
+
+    const TICKER_PALETTE = [
+      '#38bdf8', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6',
+      '#14b8a6', '#f97316', '#06b6d4', '#84cc16', '#e11d48',
+      '#6366f1', '#a855f7', '#d946ef', '#0ea5e9', '#22c55e'
+    ];
+
+    function getTickerColor(ticker, index) {
+      if (ticker === 'Cash') return '#475569';
+      return TICKER_PALETTE[index % TICKER_PALETTE.length];
+    }
+
+    // --- Timezone & Regular Trading Hours (RTH) Utilities (America/New_York ET) ---
+    const ET_TIMEZONE = 'America/New_York';
+
+    function parseDate(dt) {
+      if (!dt) return null;
+      if (dt instanceof Date) return isNaN(dt.getTime()) ? null : dt;
+      const d = new Date(dt);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function getETParts(d) {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: ET_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      const parts = {};
+      formatter.formatToParts(d).forEach(p => {
+        parts[p.type] = p.value;
+      });
+      return {
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        hour: parts.hour,
+        minute: parts.minute,
+        second: parts.second,
+        dateStr: `${parts.year}-${parts.month}-${parts.day}`,
+        totalMinutes: parseInt(parts.hour, 10) * 60 + parseInt(parts.minute, 10)
+      };
+    }
+
+    function formatDateTimeET(dt, includeSeconds = true) {
+      const d = parseDate(dt);
+      if (!d) return '--';
+      const p = getETParts(d);
+      const secPart = includeSeconds ? `:${p.second}` : '';
+      return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}${secPart} ET`;
+    }
+
+    function isRegularTradingHoursET(d) {
+      const dayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: ET_TIMEZONE, weekday: 'short' });
+      const weekday = dayFormatter.format(d);
+      if (weekday === 'Sat' || weekday === 'Sun') return false;
+      const parts = getETParts(d);
+      return parts.totalMinutes >= 570 && parts.totalMinutes <= 960;
+    }
+
+    let chartDayRanges = []; // [{dateStr, weekday, startIdx, endIdx, dayIndex}]
+
+    const tradingSessionsOverlayPlugin = {
+      id: 'tradingSessionsOverlay',
+      beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales: { x } } = chart;
+        if (!chartArea || !x) return;
+
+        ctx.save();
+
+        const totalLabels = chart.data.labels ? chart.data.labels.length : 0;
+        let slotWidth = 10;
+        if (totalLabels > 1) {
+          slotWidth = Math.abs(x.getPixelForValue(1) - x.getPixelForValue(0));
+        }
+
+        // 1. Draw Alternating High-Contrast Backgrounds and Date Badges for Consecutive Days
+        if (chartDayRanges && chartDayRanges.length > 0) {
+          for (const day of chartDayRanges) {
+            const leftPixel = Math.max(chartArea.left, x.getPixelForValue(day.startIdx) - slotWidth / 2);
+            const rightPixel = Math.min(chartArea.right, x.getPixelForValue(day.endIdx) + slotWidth / 2);
+            const width = Math.max(0, rightPixel - leftPixel);
+
+            if (day.dayIndex % 2 === 1) {
+              // Odd day: Distinct rich cyan-tinted background band
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+              ctx.fillRect(leftPixel, chartArea.top, width, chartArea.height);
+            } else {
+              // Even day: Deep navy-slate background band
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+              ctx.fillRect(leftPixel, chartArea.top, width, chartArea.height);
+            }
+
+            // Draw vertical day boundary line
+            if (day.startIdx > 0 && leftPixel >= chartArea.left - 2 && leftPixel <= chartArea.right + 2) {
+              ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+              ctx.lineWidth = 1.5;
+              ctx.setLineDash([4, 4]);
+              ctx.beginPath();
+              ctx.moveTo(leftPixel, chartArea.top);
+              ctx.lineTo(leftPixel, chartArea.bottom);
+              ctx.stroke();
+            }
+
+            // Draw Day Header Badge at top if space permits
+            if (width > 42) {
+              ctx.setLineDash([]);
+              const badgeText = `${day.weekday} ${day.dateStr.substring(5)}`;
+              ctx.font = 'bold 10px monospace';
+              const textWidth = ctx.measureText(badgeText).width;
+              const badgeX = Math.min(rightPixel - textWidth / 2 - 6, Math.max(leftPixel + textWidth / 2 + 6, (leftPixel + rightPixel) / 2));
+              const badgeY = chartArea.top + 14;
+
+              ctx.fillStyle = day.dayIndex % 2 === 1 ? 'rgba(15, 23, 42, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+              ctx.fillRect(badgeX - textWidth / 2 - 5, badgeY - 10, textWidth + 10, 14);
+              ctx.strokeStyle = day.dayIndex % 2 === 1 ? 'rgba(56, 189, 248, 0.65)' : 'rgba(148, 163, 184, 0.50)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(badgeX - textWidth / 2 - 5, badgeY - 10, textWidth + 10, 14);
+
+              ctx.fillStyle = day.dayIndex % 2 === 1 ? '#38bdf8' : '#f1f5f9';
+              ctx.textAlign = 'center';
+              ctx.fillText(badgeText, badgeX, badgeY);
+            }
+          }
+        }
+
+        ctx.restore();
+      }
+    };
 
     function initChart() {
       const ctx = document.getElementById('equityChart').getContext('2d');
       equityChart = new Chart(ctx, {
         type: 'line',
+        plugins: [tradingSessionsOverlayPlugin],
         data: {
-          labels: equityLabels,
-          datasets: [{
-            label: 'Portfolio Equity ($)',
-            data: equityData,
-            borderColor: '#38bdf8',
-            backgroundColor: 'rgba(56, 189, 248, 0.1)',
-            fill: true,
-            tension: 0.1,
-            borderWidth: 2,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-          }]
+          labels: [],
+          datasets: []
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          animation: false,
           interaction: { mode: 'index', intersect: false },
+          onClick: (evt, activeEls) => {
+            if (!activeEls || activeEls.length === 0) return;
+            const el = activeEls[0];
+            const ds = equityChart.data.datasets[el.datasetIndex];
+            if (ds && ds.id === 'orders-dataset') {
+              const pt = ds.data[el.index];
+              if (pt && pt.order_id) {
+                switchTab('orders');
+                const row = document.getElementById(`order-row-${pt.order_id}`);
+                if (row) {
+                  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  document.querySelectorAll('.order-row').forEach(r => r.classList.remove('order-row-highlight'));
+                  row.classList.add('order-row-highlight');
+                }
+              }
+            }
+          },
           plugins: {
-            legend: { display: false },
+            legend: {
+              display: true,
+              position: 'top',
+              labels: {
+                color: '#cbd5e1',
+                boxWidth: 12,
+                font: { size: 11 }
+              }
+            },
             tooltip: {
               callbacks: {
-                label: (ctx) => `Equity: $${ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                title: (items) => {
+                  if (!items || items.length === 0) return '';
+                  const idx = items[0].dataIndex;
+                  const bTime = chartTimeBuckets[idx];
+                  return bTime ? formatDateTimeET(new Date(bTime), false) : items[0].label;
+                },
+                label: (ctx) => {
+                  const ds = ctx.dataset;
+                  if (ds.id === 'orders-dataset') {
+                    const raw = ctx.raw;
+                    if (raw && raw.order) {
+                      const o = raw.order;
+                      const statusNote = o.status === 'REJECTED' ? `⚠️ FAILED: ${o.reject_reason || 'Rejected'}` : o.status;
+                      const oTime = o.trading_time || o.sim_created_at || o.created_at;
+                      return [
+                        `🎯 Order: ${o.order_id}`,
+                        `   ${o.side} ${o.quantity} ${o.ticker} @ $${o.limit_price || o.price || '--'}`,
+                        `   Time: ${formatDateTimeET(oTime)}`,
+                        `   Status: ${statusNote}`
+                      ];
+                    }
+                  }
+                  if (ds.label === 'Total Equity' || ds.label === 'Total Net Equity') {
+                    return `📈 Net Total Equity: $${Number(ctx.parsed.y).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                  }
+                  if (ds.label === 'Initial Capital Baseline') {
+                    return `🏁 Initial Capital: $${Number(ctx.parsed.y).toLocaleString()}`;
+                  }
+                  if (ds.label === 'Margin Debt') {
+                    return `⚠️ Margin Loan: $${Number(ctx.parsed.y).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                  }
+                  if (ctx.parsed.y === 0) return null;
+                  return `  ${ds.label}: $${Number(ctx.parsed.y).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                },
+                afterBody: (items) => {
+                  if (!items || items.length === 0) return [];
+                  const idx = items[0].dataIndex;
+                  const bTime = chartTimeBuckets[idx];
+                  const s = currentPassBucketMap ? currentPassBucketMap.get(bTime) : null;
+                  if (s && s.cash < 0) {
+                    const debt = Math.abs(s.cash);
+                    const gross = s.gross_market_value || (s.equity + debt);
+                    const lev = s.leverage || (gross / Math.max(1, s.equity));
+                    return [
+                      `──────────────────────────────`,
+                      `⚠️ Margin Debt: $${debt.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+                      `📊 Gross Exposure: $${gross.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+                      `⚡ Effective Leverage: ${lev.toFixed(2)}x`
+                    ];
+                  }
+                  return [];
+                }
               }
             }
           },
           scales: {
             x: {
-              grid: { color: '#1e293b' },
-              ticks: { color: '#94a3b8', maxTicksLimit: 10 }
+              title: {
+                display: true,
+                text: 'Trading Time (America/New_York ET)',
+                color: '#94a3b8',
+                font: { size: 11, weight: 'bold' }
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.04)' },
+              ticks: { color: '#94a3b8', maxTicksLimit: 14 }
             },
             y: {
-              grid: { color: '#334155' },
+              stacked: true,
+              min: 0,
+              beginAtZero: true,
+              grid: { color: 'rgba(255, 255, 255, 0.08)' },
               ticks: {
                 color: '#94a3b8',
                 callback: (val) => '$' + Number(val).toLocaleString()
@@ -560,183 +847,54 @@
       });
     }
 
-    async function fetchPassesAndAccounts() {
+    async function fetchPasses() {
       try {
-        const [passesRes, accountsRes] = await Promise.all([
-          fetch('/api/v1/passes').catch(() => null),
-          fetch('/api/v1/accounts').catch(() => null),
-        ]);
-
+        const passesRes = await fetch('/api/v1/passes').catch(() => null);
         allPasses = passesRes && passesRes.ok ? await passesRes.json() : [];
-        allActiveAccounts = accountsRes && accountsRes.ok ? await accountsRes.json() : [];
 
         const selector = document.getElementById('pass-selector');
-        const currentVal = selector.value;
-        selector.innerHTML = '';
+        const currentVal = selector.value || (currentPassRecord ? currentPassRecord.summary.pass_id : '');
 
-        if (allActiveAccounts.length > 0) {
-          const optGroupActive = document.createElement('optgroup');
-          optGroupActive.label = '⚡ Active Simulation Accounts';
-          allActiveAccounts.forEach(acc => {
-            const opt = document.createElement('option');
-            opt.value = `active:${acc.account_id}`;
-            const eqStr = `$${acc.equity.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            opt.textContent = `[Active] ${acc.account_id} (${acc.tag || 'live'}) - Eq: ${eqStr}`;
-            optGroupActive.appendChild(opt);
-          });
-          selector.appendChild(optGroupActive);
-        }
-
-        if (allPasses.length > 0) {
-          const optGroupPasses = document.createElement('optgroup');
-          optGroupPasses.label = '📁 Finished Simulation Passes';
-          allPasses.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = `pass:${p.pass_id}`;
-            const sign = p.total_return_pct >= 0 ? '+' : '';
-            const retStr = `${sign}${p.total_return_pct.toFixed(2)}%`;
-            opt.textContent = `[Pass] ${p.pass_id} (${retStr}, ${p.total_trades} trades)`;
-            optGroupPasses.appendChild(opt);
-          });
-          selector.appendChild(optGroupPasses);
-        }
-
-        renderCatalog();
-
-        if (selector.options.length === 0) {
-          selector.innerHTML = '<option value="">No active accounts or finished passes</option>';
+        if (allPasses.length === 0) {
+          selector.innerHTML = '<option value="">No finished simulation passes</option>';
           renderEmptyState();
           return;
         }
 
-        let toSelect = null;
-        for (let i = 0; i < selector.options.length; i++) {
-          if (selector.options[i].value === currentVal) {
-            toSelect = currentVal;
-            break;
-          }
+        // Only rebuild selector options if the pass list has changed
+        const newIds = allPasses.map(p => p.pass_id).join('|');
+        const oldIds = Array.from(selector.options).map(o => o.value).join('|');
+
+        if (newIds !== oldIds) {
+          selector.innerHTML = '';
+          allPasses.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.pass_id;
+            const sign = p.total_return_pct >= 0 ? '+' : '';
+            const retStr = `${sign}${p.total_return_pct.toFixed(2)}%`;
+            opt.textContent = `${p.pass_id} (${retStr}, ${p.total_trades} trades, ${p.total_orders || 0} orders)`;
+            selector.appendChild(opt);
+          });
+          renderCatalog();
         }
-        if (!toSelect) {
-          toSelect = selector.options[0].value;
-        }
-        selector.value = toSelect;
-        await onPassSelect(toSelect);
 
-      } catch (err) {
-        console.error('Failed to load accounts and passes:', err);
-      }
-    }
-
-    async function onPassSelect(val) {
-      if (!val) return;
-      if (val.startsWith('active:')) {
-        const accountId = val.replace('active:', '');
-        await loadActiveAccount(accountId);
-      } else if (val.startsWith('pass:')) {
-        const passId = val.replace('pass:', '');
-        await loadFinishedPass(passId);
-      } else {
-        await loadFinishedPass(val);
-      }
-    }
-
-    async function loadActiveAccount(accountId) {
-      try {
-        const [accRes, ordersRes, tradesRes, snapsRes] = await Promise.all([
-          fetch(`/api/v1/account?account_id=${encodeURIComponent(accountId)}`),
-          fetch(`/api/v1/orders/history?account_id=${encodeURIComponent(accountId)}`),
-          fetch(`/api/v1/trades?account_id=${encodeURIComponent(accountId)}&limit=2000`),
-          fetch(`/api/v1/account/snapshots?account_id=${encodeURIComponent(accountId)}`),
-        ]);
-
-        if (!accRes.ok) return;
-        const acc = await accRes.json();
-        const orders = ordersRes.ok ? await ordersRes.json() : [];
-        const trades = tradesRes.ok ? await tradesRes.json() : [];
-        const snaps = snapsRes.ok ? await snapsRes.json() : [];
-
-        currentActiveAccount = acc;
-        currentPassRecord = null;
-        currentOrdersList = orders;
-        currentTradesList = trades;
-
-        // Header Mode
-        const modeBadge = document.getElementById('header-mode-badge');
-        modeBadge.className = 'badge badge-live';
-        modeBadge.textContent = '🟢 Active Account';
-
-        // Metadata
-        document.getElementById('meta-account-id').textContent = acc.account_id;
-        document.getElementById('meta-tag').textContent = acc.tag || 'active';
-        document.getElementById('meta-completed').textContent = (acc.updated_at || '').replace('T', ' ').substring(0, 19);
-        document.getElementById('chart-pass-label').textContent = `${acc.account_id} (Active)`;
-
-        const failedCount = orders.filter(o => o.status === 'REJECTED').length;
-        document.getElementById('meta-orders-count').textContent = orders.length;
-        document.getElementById('meta-orders-failed-count').textContent = `${failedCount} Failed`;
-        document.getElementById('meta-trades-count').textContent = trades.length;
-
-        // Margin Health
-        const margin = acc.margin || {};
-        const healthBadge = document.getElementById('meta-health-badge');
-        if (margin.is_margin_call) {
-          healthBadge.className = 'badge badge-danger';
-          healthBadge.textContent = 'MARGIN CALL';
+        // Only auto-select and load a pass if nothing is loaded yet
+        if (!currentPassRecord) {
+          const toSelect = currentVal && allPasses.some(p => p.pass_id === currentVal) ? currentVal : allPasses[0].pass_id;
+          selector.value = toSelect;
+          await onPassSelect(toSelect);
         } else {
-          healthBadge.className = 'badge badge-success';
-          healthBadge.textContent = 'HEALTHY';
+          selector.value = currentPassRecord.summary.pass_id;
         }
-
-        // Metrics calculation
-        const positions = acc.positions || {};
-        let totalPosVal = margin.gross_market_value || 0.0;
-        let totalLong = margin.total_long_value || 0.0;
-        let totalShort = margin.total_short_value || 0.0;
-        if (!totalPosVal && positions) {
-          for (const p of Object.values(positions)) {
-            const mv = Math.abs((p.quantity || 0) * (p.current_price || p.avg_entry_price || 0));
-            totalPosVal += mv;
-            if (p.quantity > 0) totalLong += mv;
-            else if (p.quantity < 0) totalShort += mv;
-          }
-        }
-        const availMargin = Math.max(0.0, acc.equity - (margin.initial_margin_requirement || 0) - (acc.frozen_cash || 0));
-        const bp = margin.buying_power !== undefined && margin.buying_power > 0 ? margin.buying_power : availMargin * 2.0;
-
-        updateAccountMetricsDisplay({
-          cash: acc.cash,
-          frozen_cash: acc.frozen_cash || 0.0,
-          total_position_val: totalPosVal,
-          total_long: totalLong,
-          total_short: totalShort,
-          positions_count: Object.keys(positions).length,
-          initial_margin_req: margin.initial_margin_requirement || 0.0,
-          maint_margin_req: margin.maintenance_margin_requirement || 0.0,
-          available_margin: availMargin,
-          buying_power: bp,
-          equity: acc.equity,
-          initial_capital: acc.initial_capital,
-          net_profit: acc.equity - acc.initial_capital,
-          leverage: margin.leverage || 1.0,
-          leverage_limit: 2.0,
-          total_orders: orders.length,
-          failed_orders: failedCount,
-        });
-
-        // Chart
-        updateChartSnapshots(snaps, acc.initial_capital, acc.equity);
-
-        // Render Tabs
-        renderOrdersTable();
-        renderTradesTable(trades);
-        renderPositionsTable(acc.positions || {});
-        document.getElementById('tab-orders-badge').textContent = orders.length;
-        document.getElementById('tab-trades-badge').textContent = trades.length;
-        document.getElementById('tab-positions-badge').textContent = Object.keys(acc.positions || {}).length;
 
       } catch (err) {
-        console.error('Error loading active account:', err);
+        console.error('Failed to load finished passes:', err);
       }
+    }
+
+    async function onPassSelect(passId) {
+      if (!passId) return;
+      await loadFinishedPass(passId);
     }
 
     async function loadFinishedPass(passId) {
@@ -746,31 +904,21 @@
         const rec = await res.json();
 
         currentPassRecord = rec;
-        currentActiveAccount = null;
         currentOrdersList = rec.orders || [];
         currentTradesList = rec.trades || [];
-
-        // Header Mode
-        const modeBadge = document.getElementById('header-mode-badge');
-        modeBadge.className = 'badge badge-pass';
-        modeBadge.textContent = '🏁 Finished Pass';
 
         const s = rec.summary;
         const perf = rec.performance || {};
 
         document.getElementById('meta-account-id').textContent = s.pass_id;
         document.getElementById('meta-tag').textContent = s.tag || s.account_id;
-        document.getElementById('meta-completed').textContent = s.completed_at ? s.completed_at.replace('T', ' ').substring(0, 19) : (s.created_at ? s.created_at.replace('T', ' ').substring(0, 19) : '--');
+        document.getElementById('meta-completed').textContent = s.completed_at ? formatDateTimeET(s.completed_at) : (s.created_at ? formatDateTimeET(s.created_at) : '--');
         document.getElementById('chart-pass-label').textContent = s.pass_id;
 
         const failedCount = currentOrdersList.filter(o => o.status === 'REJECTED').length;
         document.getElementById('meta-orders-count').textContent = currentOrdersList.length;
         document.getElementById('meta-orders-failed-count').textContent = `${failedCount} Failed`;
         document.getElementById('meta-trades-count').textContent = currentTradesList.length;
-
-        const healthBadge = document.getElementById('meta-health-badge');
-        healthBadge.className = 'badge badge-success';
-        healthBadge.textContent = 'PASS COMPLETED';
 
         // Position & Margin calculations for finished pass
         const positions = rec.positions || {};
@@ -810,8 +958,8 @@
           failed_orders: failedCount,
         });
 
-        // Chart
-        updateChartSnapshots(rec.snapshots || [], s.initial_capital, s.ending_equity);
+        // Redraw Stacked Bars + Equity Curve + Order Pins
+        buildAndRenderChart();
 
         // Render Tabs
         renderOrdersTable();
@@ -826,6 +974,444 @@
       } catch (err) {
         console.error('Error loading pass:', err);
       }
+    }
+
+    function setChartResolution(res) {
+      currentResolution = res;
+      document.querySelectorAll('.res-btn[id^="res-"]').forEach(b => {
+        b.classList.toggle('active', b.id === `res-${res}`);
+      });
+      buildAndRenderChart();
+    }
+
+    function setChartViewMode(mode) {
+      currentViewMode = mode;
+      document.querySelectorAll('#view-combined, #view-equity, #view-allocation').forEach(b => {
+        b.classList.toggle('active', b.id === `view-${mode}`);
+      });
+      buildAndRenderChart();
+    }
+
+    function buildAndRenderChart() {
+      if (!currentPassRecord || !equityChart) return;
+      const snapshots = currentPassRecord.snapshots || [];
+      const orders = currentOrdersList || [];
+
+      if (snapshots.length === 0) {
+        equityChart.data.labels = ['Start', 'End'];
+        equityChart.data.datasets = [{
+          type: 'line',
+          label: 'Total Net Equity',
+          data: [currentPassRecord.summary.initial_capital, currentPassRecord.summary.ending_equity],
+          borderColor: '#facc15',
+          borderWidth: 3
+        }];
+        equityChart.update();
+        document.getElementById('chart-date-range').textContent = 'No snapshots available';
+        return;
+      }
+
+      // Filter snapshots strictly to regular trading hours (09:30 - 16:00 ET, Mon-Fri)
+      let rthSnapshots = snapshots.filter(s => {
+        const d = parseDate(s.sim_time);
+        return d && isRegularTradingHoursET(d);
+      });
+      if (rthSnapshots.length === 0) {
+        rthSnapshots = snapshots;
+      }
+
+      // 1. Determine effective time bucket interval
+      let stepMins = 5;
+      const tStart = parseDate(rthSnapshots[0].sim_time).getTime();
+      const tEnd = parseDate(rthSnapshots[rthSnapshots.length - 1].sim_time).getTime();
+      const totalSpanMins = Math.max(1, (tEnd - tStart) / 60000);
+
+      if (currentResolution === '1m') stepMins = 1;
+      else if (currentResolution === '5m') stepMins = 5;
+      else if (currentResolution === '15m') stepMins = 15;
+      else {
+        // Auto
+        if (totalSpanMins <= 360) stepMins = 1;
+        else if (totalSpanMins <= 2880) stepMins = 5;
+        else stepMins = 15;
+      }
+
+      const stepMs = stepMins * 60 * 1000;
+
+      // 2. Bin snapshots into time buckets (using the closing snapshot in each bin)
+      const bucketMap = new Map(); // bucketKey -> snapshot
+      currentPassBucketMap = bucketMap;
+      const allTickersSet = new Set();
+
+      for (const s of rthSnapshots) {
+        const d = parseDate(s.sim_time);
+        if (!d) continue;
+        const timeMs = d.getTime();
+        const bucketTimeMs = Math.floor(timeMs / stepMs) * stepMs;
+        bucketMap.set(bucketTimeMs, s);
+
+        const posMap = s.positions || {};
+        for (const t of Object.keys(posMap)) {
+          allTickersSet.add(t);
+        }
+      }
+
+      const sortedBucketKeys = Array.from(bucketMap.keys()).sort((a, b) => a - b);
+
+      // Calculate first acquire timestamp for each ticker to order positions on the graph
+      const firstAcquireMap = new Map(); // ticker -> earliest epoch ms
+
+      // 1. From executed BUY trades
+      if (currentTradesList && currentTradesList.length > 0) {
+        for (const tr of currentTradesList) {
+          if (tr.ticker && (tr.side === 'BUY' || !tr.side || tr.quantity > 0)) {
+            const raw = tr.sim_timestamp || tr.timestamp || tr.trading_time;
+            if (raw) {
+              const d = parseDate(raw);
+              if (d) {
+                const ms = d.getTime();
+                if (!firstAcquireMap.has(tr.ticker) || ms < firstAcquireMap.get(tr.ticker)) {
+                  firstAcquireMap.set(tr.ticker, ms);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. From filled BUY orders
+      if (orders && orders.length > 0) {
+        for (const o of orders) {
+          if (o.ticker && o.side === 'BUY' && (o.status === 'FILLED' || (o.filled_quantity || 0) > 0)) {
+            const raw = o.trading_time || o.sim_created_at || o.created_at;
+            if (raw) {
+              const d = parseDate(raw);
+              if (d) {
+                const ms = d.getTime();
+                if (!firstAcquireMap.has(o.ticker) || ms < firstAcquireMap.get(o.ticker)) {
+                  firstAcquireMap.set(o.ticker, ms);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 3. From snapshot position history
+      for (const s of rthSnapshots) {
+        const d = parseDate(s.sim_time);
+        if (!d) continue;
+        const sTime = d.getTime();
+        const posMap = s.positions || {};
+        for (const [t, val] of Object.entries(posMap)) {
+          if (val > 0) {
+            if (!firstAcquireMap.has(t) || sTime < firstAcquireMap.get(t)) {
+              firstAcquireMap.set(t, sTime);
+            }
+          }
+        }
+      }
+
+      // Sort tickers by first acquire time ascending (earliest acquired first, closest to cash layer)
+      const tickersList = Array.from(allTickersSet).sort((a, b) => {
+        const tA = firstAcquireMap.has(a) ? firstAcquireMap.get(a) : Infinity;
+        const tB = firstAcquireMap.has(b) ? firstAcquireMap.get(b) : Infinity;
+        if (tA !== tB) return tA - tB;
+        return a.localeCompare(b);
+      });
+
+      // Fallback: If snapshots did not store per-ticker breakdown, create a single "Positions" bucket
+      const hasDetailedTickers = tickersList.length > 0;
+      if (!hasDetailedTickers) {
+        tickersList.push('Positions');
+      }
+
+      const labels = [];
+      const liquidCashSeries = [];
+      const reservedCashSeries = [];
+      const tickerSeriesMap = {};
+      tickersList.forEach(t => tickerSeriesMap[t] = []);
+      const equitySeries = [];
+      chartTimeBuckets = [];
+      chartDayRanges = [];
+
+      let anyReservedCash = false;
+      let currentDayStr = null;
+      let currentDayStartIdx = 0;
+      let dayCounter = 0;
+
+      for (let i = 0; i < sortedBucketKeys.length; i++) {
+        const bTime = sortedBucketKeys[i];
+        const s = bucketMap.get(bTime);
+        const d = new Date(bTime);
+        const parts = getETParts(d);
+
+        // Format axis label strictly in Eastern Time (ET): MM-DD HH:mm
+        const labelStr = `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+        labels.push(labelStr);
+        chartTimeBuckets.push(bTime);
+
+        // Track consecutive trading day boundaries in ET
+        const dateStr = parts.dateStr;
+        if (currentDayStr === null) {
+          currentDayStr = dateStr;
+          currentDayStartIdx = i;
+        } else if (dateStr !== currentDayStr) {
+          const prevDate = new Date(sortedBucketKeys[currentDayStartIdx]);
+          const weekday = new Intl.DateTimeFormat('en-US', { timeZone: ET_TIMEZONE, weekday: 'short' }).format(prevDate);
+          chartDayRanges.push({
+            dateStr: currentDayStr,
+            weekday: weekday,
+            startIdx: currentDayStartIdx,
+            endIdx: i - 1,
+            dayIndex: dayCounter++
+          });
+          currentDayStr = dateStr;
+          currentDayStartIdx = i;
+        }
+
+        const rawCash = s.cash || 0.0;
+        const resCash = Math.max(0.0, s.reserved_cash || 0.0);
+        if (resCash > 0) anyReservedCash = true;
+
+        // If borrowed money in use (rawCash < 0), liquid cash is treated as 0
+        const liquidCash = rawCash < 0 ? 0.0 : Math.max(0.0, rawCash - resCash);
+
+        liquidCashSeries.push(Math.round(liquidCash * 100) / 100);
+        reservedCashSeries.push(Math.round(resCash * 100) / 100);
+        equitySeries.push(Math.round((s.equity || 0.0) * 100) / 100);
+
+        if (hasDetailedTickers) {
+          const pos = s.positions || {};
+          for (const t of tickersList) {
+            tickerSeriesMap[t].push(Math.round(Math.max(0.0, pos[t] || 0.0) * 100) / 100);
+          }
+        } else {
+          const posVal = Math.max(0.0, (s.equity || 0.0) - Math.max(0.0, rawCash));
+          tickerSeriesMap['Positions'].push(Math.round(posVal * 100) / 100);
+        }
+      }
+
+      // Record final day range
+      if (currentDayStr !== null) {
+        const prevDate = new Date(sortedBucketKeys[currentDayStartIdx]);
+        const weekday = new Intl.DateTimeFormat('en-US', { timeZone: ET_TIMEZONE, weekday: 'short' }).format(prevDate);
+        chartDayRanges.push({
+          dateStr: currentDayStr,
+          weekday: weekday,
+          startIdx: currentDayStartIdx,
+          endIdx: sortedBucketKeys.length - 1,
+          dayIndex: dayCounter++
+        });
+      }
+
+      // 3. Map orders onto the chart buckets
+      mappedOrderPoints = [];
+      const orderScatterData = [];
+      const pointStyles = [];
+      const pointColors = [];
+      const pointBorderColors = [];
+      const pointRadii = [];
+
+      for (const o of orders) {
+        const rawTime = o.trading_time || o.sim_created_at || o.created_at;
+        if (!rawTime) continue;
+        const oDate = parseDate(rawTime);
+        if (!oDate) continue;
+        const oTime = oDate.getTime();
+
+        // Find closest bucket index
+        let closestIdx = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < chartTimeBuckets.length; i++) {
+          const diff = Math.abs(chartTimeBuckets[i] - oTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = i;
+          }
+        }
+
+        const eqAtOrder = equitySeries[closestIdx] || currentPassRecord.summary.ending_equity;
+        
+        let pStyle = 'circle';
+        let pBg = '#10b981';
+        let pBorder = '#059669';
+        let pRadius = 7;
+
+        if (o.status === 'REJECTED') {
+          pStyle = 'crossRot';
+          pBg = '#f59e0b';
+          pBorder = '#ef4444';
+          pRadius = 8;
+        } else if (o.side === 'BUY') {
+          pStyle = 'triangle';
+          pBg = '#10b981';
+          pBorder = '#047857';
+          pRadius = 7;
+        } else { // SELL
+          pStyle = 'triangle';
+          pBg = '#ef4444';
+          pBorder = '#b91c1c';
+          pRadius = 7;
+        }
+
+        const ptObj = {
+          x: labels[closestIdx],
+          y: eqAtOrder,
+          order_id: o.order_id,
+          order: o,
+          bucketIdx: closestIdx
+        };
+
+        mappedOrderPoints.push(ptObj);
+        orderScatterData.push(ptObj);
+        pointStyles.push(pStyle);
+        pointColors.push(pBg);
+        pointBorderColors.push(pBorder);
+        pointRadii.push(pRadius);
+      }
+
+      // 4. Construct Datasets based on View Mode
+      const datasets = [];
+
+      // A. Stacked Portfolio Datasets (shown in 'combined' and 'allocation' modes)
+      if (currentViewMode === 'combined' || currentViewMode === 'allocation') {
+        // Stacked Area: Liquid Cash (Always at the bottom: fills from origin to cash)
+        datasets.push({
+          type: 'line',
+          label: 'Liquid Cash',
+          stack: 'portfolio',
+          data: liquidCashSeries,
+          fill: 'origin',
+          backgroundColor: 'rgba(51, 65, 85, 0.45)', // slate area
+          borderColor: '#64748b',                     // boundary line
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.1,
+          order: 10,
+        });
+
+        // Stacked Area: Reserved Cash (Funds in pending orders, fills from cash)
+        if (anyReservedCash) {
+          datasets.push({
+            type: 'line',
+            label: 'Reserved Cash (Pending)',
+            stack: 'portfolio',
+            data: reservedCashSeries,
+            fill: '-1',
+            backgroundColor: 'rgba(245, 158, 11, 0.35)', // amber area
+            borderColor: '#f59e0b',                      // boundary line
+            borderWidth: 1.5,
+            borderDash: [4, 4],                          // dashed line represents committed/pending
+            pointRadius: 0,
+            tension: 0.1,
+            order: 10,
+          });
+        }
+
+        // Stacked Area: Tickers in first-acquired order (Never overlapping, fills to previous stacked layer)
+        tickersList.forEach((ticker, idx) => {
+          const col = getTickerColor(ticker, idx);
+          datasets.push({
+            type: 'line',
+            label: `${ticker} (MV)`,
+            stack: 'portfolio',
+            data: tickerSeriesMap[ticker],
+            fill: '-1',
+            backgroundColor: col + '33', // semi-transparent color fill
+            borderColor: col,           // distinct colored boundary line
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.1,
+            order: 10,
+          });
+        });
+      }
+
+      // B. Baseline for Net Equity Mode
+      if (currentViewMode === 'equity') {
+        const initCap = currentPassRecord.summary ? currentPassRecord.summary.initial_capital : 100000;
+        datasets.push({
+          type: 'line',
+          label: 'Initial Capital Baseline',
+          stack: 'baseline',
+          data: new Array(labels.length).fill(initCap),
+          borderColor: 'rgba(148, 163, 184, 0.6)',
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          order: 2,
+        });
+      }
+
+      // C. Net Total Equity Line (Unstacked separate stack 'equity', prominent gold curve)
+      const isNetEquityOnly = currentViewMode === 'equity';
+      datasets.push({
+        type: 'line',
+        label: 'Total Net Equity',
+        stack: 'equity',
+        data: equitySeries,
+        borderColor: '#facc15',
+        backgroundColor: isNetEquityOnly ? 'rgba(250, 204, 21, 0.08)' : 'transparent',
+        borderWidth: 3,
+        tension: 0.1,
+        pointRadius: 0,
+        pointHoverRadius: 6,
+        fill: isNetEquityOnly ? 'origin' : false,
+        order: 1,
+      });
+
+      // D. Scatter: Orders on trending chart (Unstacked separate stack 'orders')
+      if (orderScatterData.length > 0) {
+        datasets.push({
+          id: 'orders-dataset',
+          type: 'scatter',
+          label: 'Orders',
+          stack: 'orders',
+          data: orderScatterData,
+          pointStyle: pointStyles,
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointBorderColors,
+          pointRadius: pointRadii,
+          pointHoverRadius: 10,
+          borderWidth: 2,
+          showLine: false,
+          order: 0,
+        });
+      }
+
+      if (equityChart.options && equityChart.options.scales && equityChart.options.scales.y) {
+        equityChart.options.scales.y.stacked = (currentViewMode !== 'equity');
+      }
+      equityChart.data.labels = labels;
+      equityChart.data.datasets = datasets;
+      equityChart.update();
+
+      const firstStr = formatDateTimeET(rthSnapshots[0].sim_time, false);
+      const lastStr = formatDateTimeET(rthSnapshots[rthSnapshots.length - 1].sim_time, false);
+      document.getElementById('chart-date-range').textContent = `${firstStr} → ${lastStr} (${labels.length} bars @ ${stepMins}m ET)`;
+    }
+
+    function locateOrderOnChart(orderId) {
+      // 1. Scroll chart into view
+      document.getElementById('chart-container-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // 2. Find order point
+      const ptIndex = mappedOrderPoints.findIndex(p => p.order_id === orderId);
+      if (ptIndex !== -1 && equityChart) {
+        const dsIndex = equityChart.data.datasets.findIndex(d => d.id === 'orders-dataset');
+        if (dsIndex !== -1) {
+          equityChart.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }]);
+          equityChart.tooltip.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }], { x: 0, y: 0 });
+          equityChart.update();
+        }
+      }
+
+      // 3. Highlight row in orders table
+      document.querySelectorAll('.order-row').forEach(r => r.classList.remove('order-row-highlight'));
+      const row = document.getElementById(`order-row-${orderId}`);
+      if (row) row.classList.add('order-row-highlight');
     }
 
     function updateAccountMetricsDisplay(m) {
@@ -861,26 +1447,6 @@
       profitEl.className = 'stat-sub ' + ((m.net_profit || 0) >= 0 ? 'positive' : 'negative');
     }
 
-    function updateChartSnapshots(snapshots, initCap, endingEq) {
-      equityLabels.length = 0;
-      equityData.length = 0;
-      if (snapshots && snapshots.length > 0) {
-        for (const pt of snapshots) {
-          const tStr = pt.sim_time ? pt.sim_time.replace('T', ' ').substring(5, 19) : '';
-          equityLabels.push(tStr);
-          equityData.push(pt.equity);
-        }
-        const first = snapshots[0].sim_time ? snapshots[0].sim_time.replace('T', ' ').substring(0, 16) : '';
-        const last = snapshots[snapshots.length - 1].sim_time ? snapshots[snapshots.length - 1].sim_time.replace('T', ' ').substring(0, 16) : '';
-        document.getElementById('chart-date-range').textContent = `${first} ~ ${last} (${snapshots.length.toLocaleString()} points)`;
-      } else {
-        equityLabels.push('Start', 'Current');
-        equityData.push(initCap, endingEq);
-        document.getElementById('chart-date-range').textContent = 'Initial to Current Valuation';
-      }
-      if (equityChart) equityChart.update();
-    }
-
     function setOrderFilter(status) {
       currentFilterStatus = status;
       document.querySelectorAll('.filter-buttons .filter-btn').forEach(btn => {
@@ -911,7 +1477,7 @@
       }
 
       if (orders.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" style="color:var(--text-muted); text-align:center; padding:30px;">No orders match the current filter (${currentFilterStatus})</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No orders match the current filter (${currentFilterStatus})</td></tr>`;
         return;
       }
 
@@ -922,9 +1488,9 @@
         } else if (o.status === 'CANCELLED') {
           statusBadge = `<span class="badge badge-amber">CANCELLED</span>`;
         } else if (o.status === 'PARTIALLY_FILLED') {
-          statusBadge = `<span class="badge badge-live">PARTIAL</span>`;
+          statusBadge = `<span class="badge badge-blue">PARTIAL</span>`;
         } else if (o.status === 'ACCEPTED' || o.status === 'PENDING') {
-          statusBadge = `<span class="badge badge-live">ACCEPTED</span>`;
+          statusBadge = `<span class="badge badge-blue">ACCEPTED</span>`;
         }
 
         const sideClass = o.side === 'BUY' ? 'tag-buy' : (o.side === 'SELL' ? 'tag-sell' : 'tag-short');
@@ -940,10 +1506,14 @@
           notesHtml = `<span style="color:var(--accent-green); font-size:11px;">100% Executed</span>`;
         }
 
-        const timeStr = (o.created_at || '').replace('T', ' ').substring(0, 19);
+        const rawTime = o.trading_time || o.sim_created_at || o.created_at;
+        const timeStr = formatDateTimeET(rawTime);
 
         return `
-          <tr>
+          <tr id="order-row-${o.order_id}" class="order-row">
+            <td>
+              <button onclick="locateOrderOnChart('${o.order_id}')" class="btn-locate" title="Locate on trending chart">🎯 Locate</button>
+            </td>
             <td>${idx + 1}</td>
             <td style="font-family:monospace; color:var(--text-muted);">${timeStr}</td>
             <td><code>${o.order_id.substring(0, 18)}</code></td>
@@ -963,13 +1533,13 @@
     function renderTradesTable(trades) {
       const tbody = document.getElementById('trades-body');
       if (!trades || trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No executed trades recorded</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>';
         return;
       }
       tbody.innerHTML = trades.map((t, idx) => `
         <tr>
           <td>${idx + 1}</td>
-          <td style="font-family:monospace; color:var(--text-muted);">${(t.timestamp || '').replace('T', ' ').substring(0, 19)}</td>
+          <td style="font-family:monospace; color:var(--text-muted);">${formatDateTimeET(t.timestamp)}</td>
           <td><code>${(t.trade_id || '').substring(0, 16)}</code></td>
           <td><code>${(t.order_id || '').substring(0, 16)}</code></td>
           <td><strong>${t.ticker}</strong></td>
@@ -1011,14 +1581,14 @@
     function renderAuditLedger(ledgerEntries) {
       const ledgerBody = document.getElementById('ledger-body');
       if (!ledgerEntries || ledgerEntries.length === 0) {
-        ledgerBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center;">No audit ledger entries available</td></tr>';
+        ledgerBody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:30px;">No audit ledger entries available</td></tr>';
         return;
       }
       ledgerBody.innerHTML = ledgerEntries.slice(0, 500).map(e => `
         <tr>
           <td>${e.entry_id}</td>
           <td><strong style="color:var(--accent-blue);">${e.event_type}</strong></td>
-          <td style="font-family:monospace; color:var(--text-muted);">${(e.sim_time || '').replace('T', ' ').substring(0, 19)}</td>
+          <td style="font-family:monospace; color:var(--text-muted);">${formatDateTimeET(e.sim_time)}</td>
           <td>${e.account_id}</td>
           <td style="font-size:12px; color:var(--text-muted);">${JSON.stringify(e.details || {})}</td>
         </tr>
@@ -1028,7 +1598,7 @@
     function renderCatalog() {
       const catBody = document.getElementById('catalog-body');
       if (!allPasses || allPasses.length === 0) {
-        catBody.innerHTML = '<tr><td colspan="11" style="color:var(--text-muted); text-align:center;">No finished passes recorded yet</td></tr>';
+        catBody.innerHTML = '<tr><td colspan="11" style="color:var(--text-muted); text-align:center; padding:30px;">No finished passes recorded yet</td></tr>';
         return;
       }
       catBody.innerHTML = allPasses.map(p => {
@@ -1038,7 +1608,7 @@
           <tr>
             <td><strong>${p.pass_id}</strong></td>
             <td>${p.tag || p.account_id}</td>
-            <td style="font-family:monospace; color:var(--text-muted);">${(p.completed_at || p.created_at || '').replace('T', ' ').substring(0, 19)}</td>
+            <td style="font-family:monospace; color:var(--text-muted);">${formatDateTimeET(p.completed_at || p.created_at)}</td>
             <td>$${p.initial_capital.toLocaleString()}</td>
             <td><strong>$${p.ending_equity.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td>
             <td class="${retClass}"><strong>${sign}$${p.net_profit.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td>
@@ -1054,9 +1624,9 @@
 
     function selectPassFromCatalog(passId) {
       const selector = document.getElementById('pass-selector');
-      selector.value = `pass:${passId}`;
+      selector.value = passId;
       switchTab('orders');
-      onPassSelect(selector.value);
+      onPassSelect(passId);
     }
 
     function renderEmptyState() {
@@ -1066,8 +1636,8 @@
       document.getElementById('meta-orders-count').textContent = '0';
       document.getElementById('meta-orders-failed-count').textContent = '0 Failed';
       document.getElementById('meta-trades-count').textContent = '0';
-      document.getElementById('chart-pass-label').textContent = 'No Account / Pass Selected';
-      document.getElementById('chart-date-range').textContent = 'Select an account or pass above';
+      document.getElementById('chart-pass-label').textContent = 'No Pass Selected';
+      document.getElementById('chart-date-range').textContent = 'Run a simulation pass to view results';
 
       document.getElementById('stat-total-cash').textContent = '$0.00';
       document.getElementById('stat-frozen-cash').textContent = 'Liquid: $0.00 | Frozen: $0.00';
@@ -1082,11 +1652,13 @@
       document.getElementById('stat-equity').textContent = '$0.00';
       document.getElementById('stat-profit-sub').textContent = 'Net Profit: $0.00 (0.00%)';
 
-      equityLabels.length = 0;
-      equityData.length = 0;
-      if (equityChart) equityChart.update();
+      if (equityChart) {
+        equityChart.data.labels = [];
+        equityChart.data.datasets = [];
+        equityChart.update();
+      }
 
-      document.getElementById('orders-body').innerHTML = `<tr><td colspan="11" style="color:var(--text-muted); text-align:center; padding:30px;">No account or pass selected</td></tr>`;
+      document.getElementById('orders-body').innerHTML = `<tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No finished simulation pass selected</td></tr>`;
       document.getElementById('trades-body').innerHTML = `<tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>`;
       document.getElementById('positions-body').innerHTML = `<tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:30px;">No positions held</td></tr>`;
     }
@@ -1111,16 +1683,10 @@
     function exportTradesCSV() {
       const val = document.getElementById('pass-selector').value;
       if (!val) {
-        alert('Please select an account or finished pass first.');
+        alert('Please select a finished pass first.');
         return;
       }
-      if (val.startsWith('pass:')) {
-        const passId = val.replace('pass:', '');
-        window.location.href = `/api/v1/passes/${encodeURIComponent(passId)}/trades/csv`;
-      } else {
-        const accountId = val.replace('active:', '');
-        window.location.href = `/api/v1/reports/trades/csv?account_id=${encodeURIComponent(accountId)}`;
-      }
+      window.location.href = `/api/v1/passes/${encodeURIComponent(val)}/trades/csv`;
     }
 
     function openPerformanceModal() {
@@ -1149,26 +1715,8 @@
             <tr><td><strong>Valuation Snapshots:</strong></td><td>${(currentPassRecord.snapshots ? currentPassRecord.snapshots.length : 0).toLocaleString()}</td></tr>
           </table>
         `;
-      } else if (currentActiveAccount) {
-        const acc = currentActiveAccount;
-        const netProfit = acc.equity - acc.initial_capital;
-        const profitSign = netProfit >= 0 ? '+' : '';
-        content.innerHTML = `
-          <table style="width:100%;">
-            <tr><td><strong>Account ID:</strong></td><td><code>${acc.account_id}</code></td></tr>
-            <tr><td><strong>Tag:</strong></td><td>${acc.tag || 'live'}</td></tr>
-            <tr><td><strong>Initial Capital:</strong></td><td>$${acc.initial_capital.toLocaleString()}</td></tr>
-            <tr><td><strong>Current Equity:</strong></td><td><strong>$${acc.equity.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td></tr>
-            <tr><td><strong>Net PnL:</strong></td><td><strong>${profitSign}$${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td></tr>
-            <tr><td><strong>Cash Balance:</strong></td><td>$${acc.cash.toLocaleString(undefined, {minimumFractionDigits: 2})}</td></tr>
-            <tr><td><strong>Frozen Cash:</strong></td><td>$${(acc.frozen_cash || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}</td></tr>
-            <tr><td><strong>Current Leverage:</strong></td><td>${acc.margin ? acc.margin.leverage : 1.0}x</td></tr>
-            <tr><td><strong>Orders:</strong></td><td>${currentOrdersList.length} (${currentOrdersList.filter(o => o.status === 'REJECTED').length} failed)</td></tr>
-            <tr><td><strong>Trades:</strong></td><td>${currentTradesList.length}</td></tr>
-          </table>
-        `;
       } else {
-        content.innerHTML = '<p>No account or pass selected.</p>';
+        content.innerHTML = '<p>No finished pass selected.</p>';
       }
     }
 
@@ -1182,37 +1730,17 @@
         const res = await fetch('/api/v1/passes', { method: 'DELETE' });
         const data = await res.json();
         alert(`Cleared ${data.count} finished pass(es).`);
-        await fetchPassesAndAccounts();
+        await fetchPasses();
       } catch (e) {
         alert('Error clearing passes: ' + e);
       }
     }
 
-    function toggleAutoRefresh() {
-      isAutoRefreshOn = !isAutoRefreshOn;
-      const btn = document.getElementById('auto-refresh-btn');
-      if (isAutoRefreshOn) {
-        btn.textContent = '🟢 Auto: ON (2s)';
-        btn.classList.add('btn-active');
-        autoRefreshTimer = setInterval(async () => {
-          const val = document.getElementById('pass-selector').value;
-          if (val) await onPassSelect(val);
-        }, 2000);
-      } else {
-        btn.textContent = 'Auto: OFF';
-        btn.classList.remove('btn-active');
-        if (autoRefreshTimer) {
-          clearInterval(autoRefreshTimer);
-          autoRefreshTimer = null;
-        }
-      }
-    }
-
     window.onload = () => {
       initChart();
-      fetchPassesAndAccounts();
-      // Periodically refresh dropdown list
-      setInterval(fetchPassesAndAccounts, 8000);
+      fetchPasses();
+      // Periodically check for new finished passes silently
+      setInterval(fetchPasses, 15000);
     };
   </script>
 </body>

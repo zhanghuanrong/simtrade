@@ -3,7 +3,7 @@
 from datetime import datetime
 from simtrade.utils import utc_now
 from typing import Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from simtrade.models.order import OrderSide
 
 
@@ -73,8 +73,27 @@ class Account(BaseModel):
     positions: Dict[str, Position] = Field(default_factory=dict)
     margin: MarginMetrics = Field(default_factory=MarginMetrics)
     custom_margin_config: Optional[Dict[str, float]] = None
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
+    _internal_margin_config: Optional[Dict[str, float]] = PrivateAttr(default=None)
+    wall_created_at: datetime = Field(default_factory=utc_now)
+    sim_updated_at: datetime = Field(default_factory=utc_now)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @property
+    def internal_margin_config(self) -> Dict[str, float]:
+        if self._internal_margin_config:
+            return self._internal_margin_config
+        return self.custom_margin_config or {}
+
+    def model_post_init(self, __context):
+        if self.created_at is None:
+            self.created_at = self.wall_created_at
+        else:
+            self.wall_created_at = self.created_at
+        if self.updated_at is None:
+            self.updated_at = self.sim_updated_at
+        else:
+            self.sim_updated_at = self.updated_at
 
 
 class AccountSetupRequest(BaseModel):
@@ -88,6 +107,7 @@ class AccountSetupRequest(BaseModel):
     leverage: Optional[float] = Field(default=None, ge=1.0, description="Max leverage multiplier (e.g. 4.0 for 4x)")
     initial_margin_rate: Optional[float] = Field(default=None, ge=0.05, le=1.0, description="Initial margin rate (e.g. 0.25)")
     maintenance_margin_rate: Optional[float] = Field(default=None, ge=0.01, le=1.0, description="Maintenance margin rate (e.g. 0.15)")
+    market_order_slippage_buffer: Optional[float] = Field(default=None, ge=0.0, description="Buffer rate applied to estimated price of market orders to prevent margin overflow (e.g. 0.05)")
 
 
 class AccountSummary(BaseModel):
@@ -102,5 +122,12 @@ class AccountSummary(BaseModel):
     buying_power: float
     margin_used: float
     positions_count: int
-    created_at: datetime
+    wall_created_at: datetime = Field(default_factory=utc_now)
+    created_at: Optional[datetime] = None
+
+    def model_post_init(self, __context):
+        if self.created_at is None:
+            self.created_at = self.wall_created_at
+        else:
+            self.wall_created_at = self.created_at
 

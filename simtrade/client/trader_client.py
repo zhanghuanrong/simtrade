@@ -27,11 +27,36 @@ class SimTradeClient:
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._listen_task: Optional[asyncio.Task] = None
 
+        # Virtual simulation time tracked from server responses and events (in America/New_York ET)
+        self.current_sim_time: Optional[datetime] = None
+
         # Callbacks
         self._on_bar_handlers: List[Callable[[Dict[str, Bar]], Coroutine[Any, Any, None]]] = []
         self._on_order_handlers: List[Callable[[Order], Coroutine[Any, Any, None]]] = []
         self._on_trade_handlers: List[Callable[[Trade], Coroutine[Any, Any, None]]] = []
         self._on_account_handlers: List[Callable[[Account], Coroutine[Any, Any, None]]] = []
+        self._on_time_handlers: List[Callable[[datetime], Coroutine[Any, Any, None]]] = []
+
+    def _update_sim_time(self, raw_time: Any) -> Optional[datetime]:
+        """Update client's tracked virtual simulation time from a server response or event."""
+        if not raw_time:
+            return None
+        if isinstance(raw_time, datetime):
+            dt = raw_time
+        else:
+            try:
+                dt = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+            except Exception:
+                return None
+
+        if self.current_sim_time is None or dt > self.current_sim_time:
+            self.current_sim_time = dt
+            for h in self._on_time_handlers:
+                try:
+                    asyncio.create_task(h(self.current_sim_time))
+                except Exception as e:
+                    logger.debug(f"Error in on_time callback: {e}")
+        return self.current_sim_time
 
     async def connect(self, with_ws: bool = True):
         """Establish HTTP session and optional WebSocket streaming connection."""
@@ -80,6 +105,10 @@ class SimTradeClient:
         self._on_account_handlers.append(handler)
         return handler
 
+    def on_time(self, handler: Callable[[datetime], Coroutine[Any, Any, None]]):
+        self._on_time_handlers.append(handler)
+        return handler
+
     async def _listen_ws(self):
         """Listen for server messages over WebSocket."""
         try:
@@ -90,19 +119,25 @@ class SimTradeClient:
                     m_data = data.get("data", {})
 
                     if m_type == "MARKET_BARS":
+                        if "timestamp" in m_data:
+                            self._update_sim_time(m_data["timestamp"])
                         bars_dict = {
                             ticker: Bar(**b) for ticker, b in m_data.get("bars", {}).items()
                         }
+                        if not m_data.get("timestamp") and bars_dict:
+                            self._update_sim_time(next(iter(bars_dict.values())).sim_timestamp)
                         for h in self._on_bar_handlers:
                             await h(bars_dict)
 
                     elif m_type == "ORDER_UPDATE":
                         order = Order(**m_data)
+                        self._update_sim_time(order.sim_updated_at or order.trading_time or order.created_at)
                         for h in self._on_order_handlers:
                             await h(order)
 
                     elif m_type == "TRADE_EXECUTION":
                         trade = Trade(**m_data)
+                        self._update_sim_time(trade.timestamp)
                         for h in self._on_trade_handlers:
                             await h(trade)
 
@@ -149,7 +184,29 @@ class SimTradeClient:
             data = await resp.json()
             if resp.status != 201:
                 raise ValueError(f"Order submission failed: {data.get('detail')}")
-            return Order(**data)
+            order = Order(**data)
+            self._update_sim_time(order.trading_time or order.sim_created_at or order.created_at)
+            if hasattr(order, "unseen_bars") and order.unseen_bars:
+                await self._dispatch_unseen_bars(order.unseen_bars)
+            return order
+
+    async def _dispatch_unseen_bars(self, unseen_bars: List[Dict[str, Any]]):
+        """Dispatch unread bar events to registered on_bar handlers."""
+        if not unseen_bars:
+            return
+        for event in unseen_bars:
+            if "timestamp" in event or "sim_timestamp" in event:
+                self._update_sim_time(event.get("timestamp") or event.get("sim_timestamp"))
+            bars_dict = {
+                ticker: Bar(**b) for ticker, b in event.get("bars", {}).items()
+            }
+            if bars_dict and not event.get("timestamp") and not event.get("sim_timestamp"):
+                self._update_sim_time(next(iter(bars_dict.values())).sim_timestamp)
+            for h in self._on_bar_handlers:
+                try:
+                    await h(bars_dict)
+                except Exception as e:
+                    logger.error(f"Error in on_bar handler: {e}")
 
     async def buy(self, ticker: str, quantity: float, order_type: OrderType = OrderType.MARKET, limit_price: Optional[float] = None) -> Order:
         return await self.submit_order(ticker=ticker, side=OrderSide.BUY, quantity=quantity, order_type=order_type, limit_price=limit_price)
@@ -203,12 +260,40 @@ class SimTradeClient:
     async def get_metadata(self) -> Dict[str, Any]:
         """Fetch simulation metadata (time range, total bars, available tickers, progress)."""
         async with self._session.get(f"{self.base_url}/api/v1/sim/metadata") as resp:
-            return await resp.json()
+            data = await resp.json()
+            if "current_time" in data:
+                self._update_sim_time(data["current_time"])
+            return data
 
-    async def start_sim(self):
-        """Start or resume continuous real-time playback (1.0x)."""
-        async with self._session.post(f"{self.base_url}/api/v1/sim/start") as resp:
-            return await resp.json()
+    async def start_sim(self, start_time: Optional[Union[str, datetime]] = None):
+        """Start or initialize continuous playback or discrete simulation at start_time (ET)."""
+        payload = {}
+        if start_time is not None:
+            payload["start_time"] = start_time.isoformat() if isinstance(start_time, datetime) else str(start_time)
+        async with self._session.post(f"{self.base_url}/api/v1/sim/start", json=payload) as resp:
+            data = await resp.json()
+            if isinstance(data, dict) and "current_time" in data:
+                self._update_sim_time(data["current_time"])
+            return data
+
+    async def step_to(self, target_time: Union[str, datetime], account_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Advance simulation forward to target_time in America/New_York (ET).
+        Alias for step_until using canonical Eastern Time virtual simulation time.
+        """
+        acc_id = account_id or self.account_id
+        iso_str = target_time.isoformat() if isinstance(target_time, datetime) else str(target_time)
+        payload = {"target_time": iso_str, "account_id": acc_id}
+        async with self._session.post(f"{self.base_url}/api/v1/sim/step_to", json=payload) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise ValueError(f"Step to failed: {data.get('detail')}")
+            if "current_time" in data:
+                self._update_sim_time(data["current_time"])
+            unseen = data.get("unseen_bars", [])
+            if unseen:
+                await self._dispatch_unseen_bars(unseen)
+            return data
 
     async def step_until(self, target_time: Union[str, datetime], account_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -224,7 +309,23 @@ class SimTradeClient:
             data = await resp.json()
             if resp.status != 200:
                 raise ValueError(f"Step until failed: {data.get('detail')}")
+            if "current_time" in data:
+                self._update_sim_time(data["current_time"])
+            unseen = data.get("unseen_bars", [])
+            if unseen:
+                await self._dispatch_unseen_bars(unseen)
             return data
+
+    async def drain_unseen_bars(self) -> List[Dict[str, Any]]:
+        """Poll and dispatch any unread market bar events since the last interaction."""
+        async with self._session.get(f"{self.base_url}/api/v1/sim/unseen_bars?account_id={self.account_id}") as resp:
+            data = await resp.json()
+            if "current_time" in data:
+                self._update_sim_time(data["current_time"])
+            unseen = data.get("unseen_bars", [])
+            if unseen:
+                await self._dispatch_unseen_bars(unseen)
+            return unseen
 
     async def reset_sim(self, start_time: Optional[str] = None) -> Dict[str, Any]:
         """Reset simulation playback cursor to start a fresh simulation pass."""
@@ -243,6 +344,7 @@ class SimTradeClient:
         leverage: Optional[float] = None,
         initial_margin_rate: Optional[float] = None,
         maintenance_margin_rate: Optional[float] = None,
+        market_order_slippage_buffer: Optional[float] = None,
     ) -> Account:
         """Negotiate / configure initial account terms, positions, and margin policy for this run pass."""
         acc_id = account_id or self.account_id
@@ -255,6 +357,7 @@ class SimTradeClient:
             "leverage": leverage,
             "initial_margin_rate": initial_margin_rate,
             "maintenance_margin_rate": maintenance_margin_rate,
+            "market_order_slippage_buffer": market_order_slippage_buffer,
         }
         async with self._session.post(f"{self.base_url}/api/v1/account/setup", json=payload) as resp:
             data = await resp.json()

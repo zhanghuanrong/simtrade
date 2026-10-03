@@ -156,7 +156,9 @@ class MatchingEngine:
                 price=round(fill_price, self.config.price_precision),
                 quantity=qty_to_fill,
                 commission=commission,
-                timestamp=bar.timestamp,
+                sim_timestamp=bar.sim_timestamp,
+                wall_timestamp=utc_now(),
+                timestamp=bar.sim_timestamp,
             )
 
             # Update order state
@@ -167,7 +169,8 @@ class MatchingEngine:
             )
             order.filled_quantity = new_filled
             order.remaining_quantity -= qty_to_fill
-            order.updated_at = utc_now()
+            order.sim_updated_at = bar.sim_timestamp
+            order.updated_at = bar.sim_timestamp
 
             if order.remaining_quantity <= 0:
                 order.status = OrderStatus.FILLED

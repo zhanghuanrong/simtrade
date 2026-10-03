@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 from pathlib import Path
 import random
-from typing import Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 import pandas as pd
 import logging
 
@@ -13,13 +13,13 @@ from simtrade.models.market_data import Bar
 logger = logging.getLogger(__name__)
 
 
+from simtrade.utils import to_eastern_time, NY_TZ
+
+
 def normalize_ts(ts) -> datetime:
     if hasattr(ts, "to_pydatetime"):
         ts = ts.to_pydatetime()
-    if getattr(ts, "tzinfo", None) is not None:
-        from datetime import timezone
-        ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
-    return ts
+    return to_eastern_time(ts)
 
 
 class SyntheticDataGenerator:
@@ -132,7 +132,7 @@ class DataFeeder:
                 self.tickers = ["AAPL", "NVDA", "TSLA", "MSFT"]
             self._synthetic_gen = SyntheticDataGenerator(self.tickers)
             if not self.start_time:
-                self.start_time = datetime(2026, 1, 5, 9, 30, 0)
+                self.start_time = datetime(2026, 1, 5, 9, 30, 0, tzinfo=NY_TZ)
             logger.info(f"DataFeeder initialized in synthetic mode for {self.tickers}")
 
     def _load_file(self, file_path: Path) -> bool:
@@ -153,8 +153,12 @@ class DataFeeder:
                 logger.error(f"Cannot identify timestamp column in {file_path}")
                 return False
 
-            # Convert timestamp
-            df["norm_time"] = pd.to_datetime(df[time_col])
+            # Convert timestamp to America/New_York (Eastern Time)
+            s_time = pd.to_datetime(df[time_col])
+            if s_time.dt.tz is not None:
+                df["norm_time"] = s_time.dt.tz_convert(NY_TZ)
+            else:
+                df["norm_time"] = s_time.dt.tz_localize(NY_TZ)
 
             # Filter or discover symbols
             if symbol_col:
@@ -225,7 +229,11 @@ class DataFeeder:
                     if not time_col:
                         continue
 
-                    df["norm_time"] = pd.to_datetime(df[time_col])
+                    s_time = pd.to_datetime(df[time_col])
+                    if s_time.dt.tz is not None:
+                        df["norm_time"] = s_time.dt.tz_convert(NY_TZ)
+                    else:
+                        df["norm_time"] = s_time.dt.tz_localize(NY_TZ)
                     for row in df.itertuples(index=False):
                         ts = normalize_ts(getattr(row, "norm_time"))
 
@@ -262,14 +270,18 @@ class DataFeeder:
             return result
 
         # Fast lookup from in-memory index
-        matched_bars = self._bars_by_time.get(normalize_ts(timestamp), {})
+        norm_t = normalize_ts(timestamp)
+        if norm_t not in self._bars_by_time:
+            return {}
+
+        matched_bars = self._bars_by_time[norm_t]
         for ticker in self.tickers:
             if ticker in matched_bars:
                 bar = matched_bars[ticker]
                 result[ticker] = bar
                 self._last_bars[ticker] = bar
             elif ticker in self._last_bars:
-                # Carry forward last known close price with zero volume
+                # Carry forward last known close price with zero volume for illiquid tickers
                 last = self._last_bars[ticker]
                 result[ticker] = Bar(
                     ticker=ticker,
@@ -283,3 +295,35 @@ class DataFeeder:
                 )
 
         return result
+
+    def get_latest_price(self, ticker: str) -> Optional[float]:
+        """Return the most recent known price for a ticker, or first known price if not yet stepped."""
+        if ticker in self._last_bars:
+            return self._last_bars[ticker].close
+        for bars in self._bars_by_time.values():
+            if ticker in bars:
+                return bars[ticker].open
+        return None
+
+    def get_bars_between(self, start_ts: Optional[datetime], end_ts: datetime) -> List[Dict[str, Any]]:
+        """
+        Return chronological sequence of bar events for timestamps t where start_ts < t <= end_ts.
+        Each item is: {"sim_timestamp": t.isoformat(), "bars": {ticker: bar_dict}}
+        """
+        end_norm = normalize_ts(end_ts)
+        start_norm = normalize_ts(start_ts) if start_ts else None
+
+        events: List[Dict[str, Any]] = []
+        if self.timeline:
+            for t in self.timeline:
+                t_norm = normalize_ts(t)
+                if start_norm and t_norm <= start_norm:
+                    continue
+                if t_norm > end_norm:
+                    break
+                bars = self.get_bars_for_time(t)
+                events.append({
+                    "sim_timestamp": t.isoformat(),
+                    "bars": {ticker: b.model_dump(mode="json") for ticker, b in bars.items()}
+                })
+        return events

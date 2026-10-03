@@ -144,12 +144,22 @@ def get_tickers():
 # -------------------------------------------------------------
 # Simulation Control Endpoints
 # -------------------------------------------------------------
+class SimStartPayload(BaseModel):
+    start_time: Optional[str] = None
+
+
 @api_router.post("/sim/start", tags=["Simulation Control"])
-def start_simulation():
-    """Start or resume continuous simulation replay at 1.0x baseline speed."""
+def start_simulation(payload: Optional[SimStartPayload] = None):
+    """Start or initialize simulation at the specified start_time (ET)."""
+    from simtrade.utils import to_eastern_time
     sim = get_simulator()
-    sim.start()
-    return {"status": "started", "speed": 1.0}
+    st = None
+    if payload and payload.start_time:
+        try:
+            st = to_eastern_time(payload.start_time)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid start_time format: {e}")
+    return sim.start(start_time=st)
 
 
 class StepUntilPayload(BaseModel):
@@ -157,21 +167,44 @@ class StepUntilPayload(BaseModel):
     account_id: str = "trader_1"
 
 
+@api_router.post("/sim/step", tags=["Simulation Control"])
+async def step_simulation(account_id: Optional[str] = None):
+    """Execute a single simulation step (advance 1 bar)."""
+    sim = get_simulator()
+    return await sim.step(account_id=account_id)
+
+
+@api_router.post("/sim/step_to", tags=["Simulation Control"])
 @api_router.post("/sim/step_until", tags=["Simulation Control"])
 async def step_until_target(payload: StepUntilPayload):
     """
-    Advance simulation from last T_anchor to target_time.
+    Advance simulation from last T_anchor to target_time (in America/New_York ET).
     If target_time <= current_time, request is ignored.
     If liquidation triggered mid-way, stops early and returns liquidation status and updated timestamp.
     If target_time is in a non-trading gap, returns empty bars with success status.
     """
-    from datetime import datetime
+    from simtrade.utils import to_eastern_time
     sim = get_simulator()
     try:
-        target_dt = datetime.fromisoformat(payload.target_time)
+        target_dt = to_eastern_time(payload.target_time)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid ISO datetime format: {e}")
     return await sim.step_until(target_dt, account_id=payload.account_id)
+
+
+@api_router.get("/sim/unseen_bars", tags=["Simulation Control"])
+def get_unseen_bars(account_id: str = "trader_1"):
+    """
+    Drain all unread market bar events that occurred since the account's last interaction.
+    """
+    sim = get_simulator()
+    unseen = sim.drain_unseen_bars(account_id=account_id)
+    return {
+        "account_id": account_id,
+        "current_time": sim.clock.sim_current_time.isoformat(),
+        "unseen_bars": unseen,
+        "count": len(unseen),
+    }
 
 
 @api_router.get("/sim/status", tags=["Simulation Control"])

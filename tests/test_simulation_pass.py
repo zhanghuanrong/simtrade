@@ -49,6 +49,8 @@ def test_account_negotiation_and_setup(client):
     assert acc["cash"] < 100000.0  # Cash is equity minus position market value
     # Buying power at 4x leverage
     assert acc["margin"]["buying_power"] > 200000.0
+    assert acc["custom_margin_config"]["max_leverage"] == 4.0
+    assert "_internal_margin_config" not in acc
 
     # Verify listed in /accounts
     list_resp = client.get("/api/v1/accounts")
@@ -133,8 +135,9 @@ def test_step_until_flow(client):
     assert resp_same.json()["status"] == "ignored"
 
     # 3. Non-trading gap handling: step into non-trading hours
-    # Market closes at 20:00 UTC. If we step until 22:00 UTC of same day:
-    target_gap = datetime(current_dt.year, current_dt.month, current_dt.day, 22, 0, 0)
+    # Market closes at 16:00 ET. If we step until 22:00 ET of same day:
+    from simtrade.utils import to_eastern_time
+    target_gap = to_eastern_time(datetime(current_dt.year, current_dt.month, current_dt.day, 22, 0, 0))
     resp_gap = client.post("/api/v1/sim/step_until", json={
         "target_time": target_gap.isoformat(),
         "account_id": "trader_1",
@@ -187,4 +190,50 @@ def test_step_until_liquidation_halt(client):
         "account_id": "margin_risk_trader",
     })
     assert subsequent_resp.status_code == 200
+
+
+def test_order_server_timestamps_and_step_to_mapping(client):
+    from datetime import datetime, timedelta
+
+    # 1. Reset simulation
+    client.post("/api/v1/sim/reset", json={})
+    meta = client.get("/api/v1/sim/metadata").json()
+    sim_t0 = datetime.fromisoformat(meta["current_time"])
+
+    # 2. Client submits order WITHOUT client-side timestamp
+    order_payload = {
+        "ticker": "AAPL",
+        "side": "BUY",
+        "quantity": 10.0,
+        "order_type": "LIMIT",
+        "limit_price": 150.0,
+    }
+    resp = client.post("/api/v1/orders", json=order_payload)
+    assert resp.status_code == 201
+    order_data = resp.json()
+
+    # 3. Server must have added sim_created_at (virtual time) and wall_received_at (wall time)
+    assert "sim_created_at" in order_data
+    assert "wall_received_at" in order_data
+    assert order_data["wall_received_at"] is not None
+    assert "created_at" in order_data
+    assert "server_received_at" in order_data
+
+    sim_created_at = datetime.fromisoformat(order_data["sim_created_at"])
+    wall_received_at = datetime.fromisoformat(order_data["wall_received_at"])
+
+    # Virtual sim_created_at matches simulation time at submission
+    assert sim_created_at.date() == sim_t0.date()
+    # Real wall time wall_received_at is today's real wall clock
+    assert wall_received_at.year >= 2026
+
+    # 4. Client accelerates simulation with step_until (STEP_TO)
+    step_target = sim_t0 + timedelta(minutes=5)
+    step_resp = client.post("/api/v1/sim/step_until", json={
+        "target_time": step_target.isoformat(),
+        "account_id": "trader_1",
+    })
+    assert step_resp.status_code == 200
+    assert step_resp.json()["current_time"] == step_target.isoformat()
+
 
