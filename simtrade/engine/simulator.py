@@ -570,7 +570,7 @@ class Simulator:
         import csv
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["trade_id", "account_id", "order_id", "ticker", "side", "price", "quantity", "notional", "commission", "timestamp"])
+        writer.writerow(["trade_id", "account_id", "order_id", "ticker", "side", "price", "quantity", "notional", "commission", "timestamp", "cost_basis", "realized_pnl", "realized_pnl_pct"])
 
         trades = self.all_trades
         if account_id:
@@ -588,6 +588,9 @@ class Simulator:
                 t.notional,
                 t.commission,
                 t.timestamp.isoformat(),
+                t.cost_basis if t.cost_basis is not None else "",
+                t.realized_pnl if t.realized_pnl is not None else "",
+                t.realized_pnl_pct if t.realized_pnl_pct is not None else "",
             ])
         return output.getvalue()
 

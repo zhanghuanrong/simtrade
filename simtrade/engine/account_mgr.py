@@ -183,6 +183,11 @@ class AccountManager:
                 pos.realized_pnl += realized
                 account.cash += realized  # Realize profit/loss to cash
 
+                trade.cost_basis = round(pos.avg_entry_price, 4)
+                trade.realized_pnl = round(realized, 4)
+                if pos.avg_entry_price > 0:
+                    trade.realized_pnl_pct = round((pos.avg_entry_price - price) / pos.avg_entry_price * 100.0, 2)
+
                 remaining_after_close = pos.quantity + closed_qty  # Still negative or zero
                 excess_buy = qty - closed_qty
 
@@ -213,6 +218,11 @@ class AccountManager:
                 account.realized_pnl += realized
                 pos.realized_pnl += realized
                 account.cash += (closed_qty * price) # Cash received from sale
+
+                trade.cost_basis = round(pos.avg_entry_price, 4)
+                trade.realized_pnl = round(realized, 4)
+                if pos.avg_entry_price > 0:
+                    trade.realized_pnl_pct = round((price - pos.avg_entry_price) / pos.avg_entry_price * 100.0, 2)
 
                 remaining_after_close = pos.quantity - closed_qty
                 excess_sell = qty - closed_qty

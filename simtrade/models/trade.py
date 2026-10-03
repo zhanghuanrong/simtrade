@@ -22,6 +22,9 @@ class Trade(BaseModel):
     sim_timestamp: datetime = Field(default_factory=utc_now)
     wall_timestamp: datetime = Field(default_factory=utc_now)
     timestamp: Optional[datetime] = None
+    cost_basis: Optional[float] = None
+    realized_pnl: Optional[float] = None
+    realized_pnl_pct: Optional[float] = None
 
     def model_post_init(self, __context):
         if self.timestamp is None:

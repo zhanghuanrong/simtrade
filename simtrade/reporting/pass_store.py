@@ -50,6 +50,63 @@ class PassSummary(BaseModel):
         else:
             self.wall_completed_at = self.completed_at
 
+def enrich_trades_with_pnl(trades: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ensure all SELL/COVER trades in the list have cost_basis, realized_pnl, and realized_pnl_pct."""
+    positions: Dict[str, Dict[str, float]] = {}  # ticker -> {'qty': float, 'avg_price': float}
+
+    for t in trades:
+        ticker = t.get("ticker", "")
+        side = (t.get("side") or "").upper()
+        qty = float(t.get("quantity") or 0.0)
+        price = float(t.get("price") or 0.0)
+
+        pos = positions.setdefault(ticker, {"qty": 0.0, "avg_price": 0.0})
+
+        if side == "BUY":
+            if pos["qty"] < 0:
+                closed = min(abs(pos["qty"]), qty)
+                cost_basis = pos["avg_price"]
+                pnl = (cost_basis - price) * closed
+                pnl_pct = ((cost_basis - price) / cost_basis * 100.0) if cost_basis > 0 else 0.0
+                if t.get("realized_pnl") is None:
+                    t["cost_basis"] = round(cost_basis, 4)
+                    t["realized_pnl"] = round(pnl, 4)
+                    t["realized_pnl_pct"] = round(pnl_pct, 2)
+                pos["qty"] += closed
+                excess = qty - closed
+                if excess > 0:
+                    pos["qty"] = excess
+                    pos["avg_price"] = price
+            else:
+                tot_cost = pos["qty"] * pos["avg_price"] + qty * price
+                new_qty = pos["qty"] + qty
+                pos["avg_price"] = tot_cost / new_qty if new_qty > 0 else 0.0
+                pos["qty"] = new_qty
+        elif side in ("SELL", "SELL_SHORT"):
+            if pos["qty"] > 0:
+                closed = min(pos["qty"], qty)
+                cost_basis = pos["avg_price"]
+                pnl = (price - cost_basis) * closed
+                pnl_pct = ((price - cost_basis) / cost_basis * 100.0) if cost_basis > 0 else 0.0
+                if t.get("realized_pnl") is None:
+                    t["cost_basis"] = round(cost_basis, 4)
+                    t["realized_pnl"] = round(pnl, 4)
+                    t["realized_pnl_pct"] = round(pnl_pct, 2)
+                pos["qty"] -= closed
+                if pos["qty"] <= 1e-6:
+                    pos["qty"] = 0.0
+                    pos["avg_price"] = 0.0
+                excess = qty - closed
+                if excess > 0:
+                    pos["qty"] = -excess
+                    pos["avg_price"] = price
+            else:
+                tot_short_val = abs(pos["qty"]) * pos["avg_price"] + qty * price
+                new_short_qty = abs(pos["qty"]) + qty
+                pos["avg_price"] = round(tot_short_val / new_short_qty, 4) if new_short_qty > 0 else 0.0
+                pos["qty"] = -new_short_qty
+    return trades
+
 
 class PassRecord(BaseModel):
     """Complete historical record of a finished simulation pass."""
@@ -60,6 +117,10 @@ class PassRecord(BaseModel):
     orders: List[Dict[str, Any]] = Field(default_factory=list)
     snapshots: List[Dict[str, Any]] = Field(default_factory=list)
     ledger_entries: List[Dict[str, Any]] = Field(default_factory=list)
+
+    def model_post_init(self, __context):
+        if self.trades:
+            self.trades = enrich_trades_with_pnl(self.trades)
 
     def get_orders(self) -> List[Dict[str, Any]]:
         """Return stored orders, or reconstruct from ledger entries if orders was empty."""
@@ -180,7 +241,8 @@ class PassStore:
         writer = csv.writer(output)
         writer.writerow([
             "trade_id", "account_id", "order_id", "ticker", "side",
-            "price", "quantity", "notional", "commission", "timestamp"
+            "price", "quantity", "notional", "commission", "timestamp",
+            "cost_basis", "realized_pnl", "realized_pnl_pct"
         ])
         for t in rec.trades:
             writer.writerow([
@@ -194,6 +256,9 @@ class PassStore:
                 t.get("notional", 0.0),
                 t.get("commission", 0.0),
                 t.get("timestamp", ""),
+                t.get("cost_basis", "") if t.get("cost_basis") is not None else "",
+                t.get("realized_pnl", "") if t.get("realized_pnl") is not None else "",
+                t.get("realized_pnl_pct", "") if t.get("realized_pnl_pct") is not None else "",
             ])
         return output.getvalue()
 

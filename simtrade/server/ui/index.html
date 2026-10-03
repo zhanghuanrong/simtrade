@@ -255,6 +255,27 @@
     .tag-buy { color: var(--accent-green); font-weight: 700; }
     .tag-sell { color: var(--accent-red); font-weight: 700; }
     .tag-short { color: var(--accent-purple); font-weight: 700; }
+    .badge-order {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .badge-trade {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .trade-row {
+      background: rgba(16, 185, 129, 0.02);
+    }
 
     /* Failure Reason Callout */
     .reason-box {
@@ -429,26 +450,45 @@
   <!-- Tabbed Detailed Inspection -->
   <div class="chart-panel" style="padding-top: 10px;">
     <div class="tabs-nav">
-      <button class="tab-btn active" onclick="switchTab('orders')">Order History (<span id="tab-orders-badge">0</span>)</button>
-      <button class="tab-btn" onclick="switchTab('trades')">Executed Transactions (<span id="tab-trades-badge">0</span>)</button>
+      <button class="tab-btn active" onclick="switchTab('activity')">Orders & Transactions (<span id="tab-activity-badge">0</span>)</button>
       <button class="tab-btn" onclick="switchTab('positions')">Open / Held Positions (<span id="tab-positions-badge">0</span>)</button>
       <button class="tab-btn" onclick="switchTab('catalog')">All Finished Passes Catalog</button>
       <button class="tab-btn" onclick="switchTab('ledger')">Audit Event Ledger</button>
     </div>
 
-    <!-- Tab 1: Orders History (including Failed / Rejected) -->
-    <div id="tab-orders" class="table-container">
+    <!-- Unified Tab: Orders & Transactions Activity -->
+    <div id="tab-activity" class="table-container">
       <div class="filter-bar">
-        <div class="filter-buttons">
-          <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Status Filter:</span>
-          <button class="filter-btn active" onclick="setOrderFilter('ALL')">All</button>
-          <button class="filter-btn" onclick="setOrderFilter('FILLED')">Filled</button>
-          <button class="filter-btn" onclick="setOrderFilter('REJECTED')" style="color:var(--accent-red); font-weight:700;">Failed / Rejected</button>
-          <button class="filter-btn" onclick="setOrderFilter('CANCELLED')">Cancelled</button>
-          <button class="filter-btn" onclick="setOrderFilter('ACCEPTED')">Pending / Accepted</button>
+        <div class="filter-buttons" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <!-- Checkboxes to see which or both -->
+          <div style="display:flex; align-items:center; gap:10px; background:rgba(30, 41, 59, 0.85); padding:5px 12px; border-radius:6px; border:1px solid var(--border);">
+            <span style="font-size:12px; color:var(--text-muted); font-weight:700;">Show:</span>
+            <label style="display:inline-flex; align-items:center; gap:5px; font-size:12px; cursor:pointer; color:var(--text-main); font-weight:600;">
+              <input type="checkbox" id="filter-check-orders" checked onchange="onActivityFilterChange()">
+              Orders (<span id="count-orders-badge">0</span>)
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:5px; font-size:12px; cursor:pointer; color:var(--text-main); font-weight:600;">
+              <input type="checkbox" id="filter-check-trades" checked onchange="onActivityFilterChange()">
+              Transactions (<span id="count-trades-badge">0</span>)
+            </label>
+          </div>
+          <div id="filter-group-status" style="display:flex; align-items:center; gap:4px;">
+            <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Status:</span>
+            <button class="filter-btn active" onclick="setActivityStatusFilter('ALL', this)">All</button>
+            <button class="filter-btn" onclick="setActivityStatusFilter('FILLED', this)">Filled / Executed</button>
+            <button class="filter-btn" onclick="setActivityStatusFilter('REJECTED', this)" style="color:var(--accent-red); font-weight:700;">Failed / Rejected</button>
+            <button class="filter-btn" onclick="setActivityStatusFilter('CANCELLED', this)">Cancelled</button>
+            <button class="filter-btn" onclick="setActivityStatusFilter('ACCEPTED', this)">Pending</button>
+          </div>
+          <div id="filter-group-side" style="display:flex; align-items:center; gap:4px;">
+            <span style="font-size:12px; color:var(--text-muted); font-weight:600;">Side:</span>
+            <button class="filter-btn active" onclick="setActivitySideFilter('ALL', this)">All</button>
+            <button class="filter-btn" onclick="setActivitySideFilter('BUY', this)" style="color:var(--accent-green); font-weight:700;">Buy</button>
+            <button class="filter-btn" onclick="setActivitySideFilter('SELL', this)" style="color:var(--accent-red); font-weight:700;">Sell</button>
+          </div>
         </div>
         <div>
-          <input type="text" id="order-search" placeholder="Search ticker or order ID..." oninput="onOrderSearch(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:5px 10px; border-radius:6px; font-size:12px; min-width:220px;">
+          <input type="text" id="activity-search" placeholder="Search ticker, order ID, or trade ID..." oninput="onActivitySearch(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:1px solid var(--border); padding:5px 10px; border-radius:6px; font-size:12px; min-width:240px;">
         </div>
       </div>
       <table>
@@ -456,43 +496,22 @@
           <tr>
             <th>Locate</th>
             <th>#</th>
-            <th>Time (ET)</th>
-            <th>Order ID</th>
-            <th>Ticker</th>
-            <th>Side</th>
             <th>Type</th>
-            <th>Quantity</th>
-            <th>Filled</th>
-            <th>Limit Price</th>
-            <th>Status</th>
-            <th>Notes / Failure Reason</th>
-          </tr>
-        </thead>
-        <tbody id="orders-body">
-          <tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No orders loaded</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Tab 2: Executed Trades / Transactions Tape -->
-    <div id="tab-trades" class="table-container" style="display:none;">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Execution Time (ET)</th>
-            <th>Trade ID</th>
-            <th>Order ID</th>
+            <th>Time (ET)</th>
+            <th>Order / Trade ID</th>
             <th>Ticker</th>
             <th>Side</th>
             <th>Price</th>
             <th>Qty</th>
-            <th>Notional Value</th>
-            <th>Commission</th>
+            <th>Filled</th>
+            <th>Cost Basis</th>
+            <th>Gain / Loss</th>
+            <th>Status</th>
+            <th>Notes / Execution Details</th>
           </tr>
         </thead>
-        <tbody id="trades-body">
-          <tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>
+        <tbody id="activity-body">
+          <tr><td colspan="14" style="color:var(--text-muted); text-align:center; padding:30px;">No trading activity loaded</td></tr>
         </tbody>
       </table>
     </div>
@@ -961,15 +980,22 @@
         // Redraw Stacked Bars + Equity Curve + Order Pins
         buildAndRenderChart();
 
+        // Enrich trades with cost basis and realized PnL
+        currentTradesList = computeTradesPnL(currentTradesList);
+
         // Render Tabs
-        renderOrdersTable();
-        renderTradesTable(currentTradesList);
+        renderActivityTable();
         renderPositionsTable(rec.positions || {});
         renderAuditLedger(rec.ledger_entries || []);
 
-        document.getElementById('tab-orders-badge').textContent = currentOrdersList.length;
-        document.getElementById('tab-trades-badge').textContent = currentTradesList.length;
-        document.getElementById('tab-positions-badge').textContent = Object.keys(rec.positions || {}).length;
+        const actBadge = document.getElementById('tab-activity-badge');
+        if (actBadge) actBadge.textContent = currentOrdersList.length + currentTradesList.length;
+        const ordBadge = document.getElementById('count-orders-badge');
+        if (ordBadge) ordBadge.textContent = currentOrdersList.length;
+        const trdBadge = document.getElementById('count-trades-badge');
+        if (trdBadge) trdBadge.textContent = currentTradesList.length;
+        const posBadge = document.getElementById('tab-positions-badge');
+        if (posBadge) posBadge.textContent = Object.keys(rec.positions || {}).length;
 
       } catch (err) {
         console.error('Error loading pass:', err);
@@ -1408,10 +1434,13 @@
         }
       }
 
-      // 3. Highlight row in orders table
+      // 3. Highlight matching row(s) in activity table
       document.querySelectorAll('.order-row').forEach(r => r.classList.remove('order-row-highlight'));
-      const row = document.getElementById(`order-row-${orderId}`);
-      if (row) row.classList.add('order-row-highlight');
+      const rows = document.querySelectorAll(`[id*="${orderId}"], [data-order-id="${orderId}"]`);
+      rows.forEach(r => r.classList.add('order-row-highlight'));
+      if (rows.length > 0) {
+        rows[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
 
     function updateAccountMetricsDisplay(m) {
@@ -1447,109 +1476,332 @@
       profitEl.className = 'stat-sub ' + ((m.net_profit || 0) >= 0 ? 'positive' : 'negative');
     }
 
-    function setOrderFilter(status) {
-      currentFilterStatus = status;
-      document.querySelectorAll('.filter-buttons .filter-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.textContent.toUpperCase().includes(status));
+    let currentActivityStatus = 'ALL';
+    let currentActivitySide = 'ALL';
+    let currentActivitySearch = '';
+
+    function computeTradesPnL(trades) {
+      if (!trades || trades.length === 0) return [];
+      const positions = {};
+      return trades.map(t => {
+        const copy = Object.assign({}, t);
+        const ticker = copy.ticker;
+        const side = (copy.side || '').toUpperCase();
+        const qty = parseFloat(copy.quantity || 0);
+        const price = parseFloat(copy.price || 0);
+        const comm = parseFloat(copy.commission || 0);
+
+        if (!positions[ticker]) positions[ticker] = { qty: 0, avg_price: 0 };
+        const pos = positions[ticker];
+
+        if (side === 'BUY') {
+          if (pos.qty < 0) {
+            // Covering short
+            const closed = Math.min(Math.abs(pos.qty), qty);
+            const costBasis = pos.avg_price;
+            const pnl = (costBasis - price) * closed;
+            const pnlPct = costBasis > 0 ? ((costBasis - price) / costBasis * 100) : 0;
+            if (copy.realized_pnl === undefined || copy.realized_pnl === null) {
+              copy.cost_basis = costBasis;
+              copy.realized_pnl = pnl;
+              copy.realized_pnl_pct = pnlPct;
+            }
+            pos.qty += closed;
+            const excess = qty - closed;
+            if (excess > 0) {
+              pos.qty = excess;
+              pos.avg_price = price;
+            }
+          } else {
+            const totCost = (pos.qty * pos.avg_price) + (qty * price);
+            const newQty = pos.qty + qty;
+            pos.avg_price = newQty > 0 ? (totCost / newQty) : 0;
+            pos.qty = newQty;
+          }
+        } else if (side === 'SELL' || side === 'SELL_SHORT') {
+          if (pos.qty > 0) {
+            // Closing long
+            const closed = Math.min(pos.qty, qty);
+            const costBasis = pos.avg_price;
+            const pnl = (price - costBasis) * closed;
+            const pnlPct = costBasis > 0 ? ((price - costBasis) / costBasis * 100) : 0;
+            if (copy.realized_pnl === undefined || copy.realized_pnl === null) {
+              copy.cost_basis = costBasis;
+              copy.realized_pnl = pnl;
+              copy.realized_pnl_pct = pnlPct;
+            }
+            pos.qty -= closed;
+            if (pos.qty <= 1e-6) {
+              pos.qty = 0;
+              pos.avg_price = 0;
+            }
+            const excess = qty - closed;
+            if (excess > 0) {
+              pos.qty = -excess;
+              pos.avg_price = price;
+            }
+          } else {
+            const totShortVal = (Math.abs(pos.qty) * pos.avg_price) + (qty * price);
+            const newShortQty = Math.abs(pos.qty) + qty;
+            pos.avg_price = newShortQty > 0 ? (totShortVal / newShortQty) : 0;
+            pos.qty = -newShortQty;
+          }
+        }
+        return copy;
       });
-      renderOrdersTable();
     }
 
-    function onOrderSearch(query) {
-      currentSearchTerm = (query || '').trim().toLowerCase();
-      renderOrdersTable();
+    function onActivityFilterChange() {
+      renderActivityTable();
     }
 
-    function renderOrdersTable() {
-      const tbody = document.getElementById('orders-body');
-      let orders = currentOrdersList || [];
+    function onActivityTypeChange() {
+      renderActivityTable();
+    }
 
-      if (currentFilterStatus !== 'ALL') {
-        orders = orders.filter(o => (o.status || '').toUpperCase() === currentFilterStatus);
+    function setActivityStatusFilter(status, btnEl) {
+      currentActivityStatus = status;
+      if (btnEl) {
+        document.querySelectorAll('#filter-group-status .filter-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+      } else {
+        document.querySelectorAll('#filter-group-status .filter-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.textContent.toUpperCase().includes(status));
+        });
+      }
+      renderActivityTable();
+    }
+
+    function setActivitySideFilter(side, btnEl) {
+      currentActivitySide = side;
+      if (btnEl) {
+        document.querySelectorAll('#filter-group-side .filter-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+      } else {
+        document.querySelectorAll('#filter-group-side .filter-btn').forEach(btn => {
+          if (side === 'ALL') {
+            btn.classList.toggle('active', btn.textContent.toUpperCase() === 'ALL');
+          } else {
+            btn.classList.toggle('active', btn.textContent.toUpperCase() === side);
+          }
+        });
+      }
+      renderActivityTable();
+    }
+
+    function onActivitySearch(query) {
+      currentActivitySearch = (query || '').trim().toLowerCase();
+      renderActivityTable();
+    }
+
+    // Backward-compatibility shims
+    function setOrderFilter(status) { setActivityStatusFilter(status); }
+    function onOrderSearch(query) { onActivitySearch(query); }
+    function renderOrdersTable() { renderActivityTable(); }
+    function renderTradesTable() { renderActivityTable(); }
+
+    function renderActivityTable() {
+      const tbody = document.getElementById('activity-body');
+      if (!tbody) return;
+
+      const showOrders = document.getElementById('filter-check-orders') ? document.getElementById('filter-check-orders').checked : true;
+      const showTrades = document.getElementById('filter-check-trades') ? document.getElementById('filter-check-trades').checked : true;
+
+      const orders = currentOrdersList || [];
+      const trades = currentTradesList || [];
+
+      // Update badge counts on checkboxes
+      const countOrdBadge = document.getElementById('count-orders-badge');
+      if (countOrdBadge) countOrdBadge.textContent = orders.length;
+      const countTrdBadge = document.getElementById('count-trades-badge');
+      if (countTrdBadge) countTrdBadge.textContent = trades.length;
+
+      let items = [];
+
+      if (showOrders) {
+        orders.forEach(o => {
+          items.push({
+            kind: 'ORDER',
+            time: o.trading_time || o.sim_created_at || o.created_at,
+            order_id: o.order_id || '',
+            trade_id: '',
+            ticker: o.ticker || '',
+            side: (o.side || 'BUY').toUpperCase(),
+            order_type: o.order_type || 'MARKET',
+            price: o.limit_price !== null && o.limit_price !== undefined ? parseFloat(o.limit_price) : null,
+            quantity: parseFloat(o.quantity || 0),
+            filled_quantity: o.filled_quantity !== undefined ? parseFloat(o.filled_quantity) : (o.status === 'FILLED' ? parseFloat(o.quantity) : 0.0),
+            cost_basis: null,
+            realized_pnl: null,
+            realized_pnl_pct: null,
+            status: (o.status || 'ACCEPTED').toUpperCase(),
+            reject_reason: o.reject_reason || null,
+            commission: null,
+            notional: null,
+          });
+        });
       }
 
-      if (currentSearchTerm) {
-        orders = orders.filter(o => 
-          (o.ticker || '').toLowerCase().includes(currentSearchTerm) ||
-          (o.order_id || '').toLowerCase().includes(currentSearchTerm) ||
-          (o.client_order_id || '').toLowerCase().includes(currentSearchTerm)
+      if (showTrades) {
+        trades.forEach(t => {
+          items.push({
+            kind: 'TRANSACTION',
+            time: t.timestamp || t.sim_timestamp,
+            order_id: t.order_id || '',
+            trade_id: t.trade_id || '',
+            ticker: t.ticker || '',
+            side: (t.side || 'BUY').toUpperCase(),
+            order_type: 'FILL',
+            price: parseFloat(t.price || 0),
+            quantity: parseFloat(t.quantity || 0),
+            filled_quantity: parseFloat(t.quantity || 0),
+            cost_basis: t.cost_basis !== undefined && t.cost_basis !== null ? parseFloat(t.cost_basis) : null,
+            realized_pnl: t.realized_pnl !== undefined && t.realized_pnl !== null ? parseFloat(t.realized_pnl) : null,
+            realized_pnl_pct: t.realized_pnl_pct !== undefined && t.realized_pnl_pct !== null ? parseFloat(t.realized_pnl_pct) : null,
+            status: 'EXECUTED',
+            reject_reason: null,
+            commission: parseFloat(t.commission || 0),
+            notional: parseFloat(t.notional || (t.price * t.quantity)),
+          });
+        });
+      }
+
+      // Sort items chronologically by time; orders appear immediately before transaction fills at same timestamp
+      items.sort((a, b) => {
+        const da = new Date(a.time || 0).getTime();
+        const db = new Date(b.time || 0).getTime();
+        if (da !== db) return da - db;
+        if (a.kind !== b.kind) return a.kind === 'ORDER' ? -1 : 1;
+        return 0;
+      });
+
+      // Status filter
+      if (currentActivityStatus !== 'ALL') {
+        items = items.filter(it => {
+          if (it.kind === 'TRANSACTION') {
+            return currentActivityStatus === 'FILLED';
+          }
+          if (currentActivityStatus === 'FILLED') {
+            return it.status === 'FILLED' || it.status === 'PARTIALLY_FILLED';
+          }
+          return it.status === currentActivityStatus;
+        });
+      }
+
+      // Side filter
+      if (currentActivitySide !== 'ALL') {
+        items = items.filter(it => {
+          if (currentActivitySide === 'BUY') return it.side === 'BUY';
+          return it.side === 'SELL' || it.side === 'SELL_SHORT';
+        });
+      }
+
+      // Search query filter
+      if (currentActivitySearch) {
+        items = items.filter(it => 
+          it.ticker.toLowerCase().includes(currentActivitySearch) ||
+          it.order_id.toLowerCase().includes(currentActivitySearch) ||
+          it.trade_id.toLowerCase().includes(currentActivitySearch)
         );
       }
 
-      if (orders.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No orders match the current filter (${currentFilterStatus})</td></tr>`;
+      const actBadge = document.getElementById('tab-activity-badge');
+      if (actBadge) actBadge.textContent = items.length;
+
+      if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="14" style="color:var(--text-muted); text-align:center; padding:30px;">No trading activity matches filter (${currentActivityStatus}, Side: ${currentActivitySide})</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = orders.map((o, idx) => {
+      tbody.innerHTML = items.map((it, idx) => {
+        const isTrade = it.kind === 'TRANSACTION';
+        const typeBadge = isTrade 
+          ? `<span class="badge-trade">TRANSACTION</span>` 
+          : `<span class="badge-order">ORDER</span>`;
+
         let statusBadge = `<span class="badge badge-success">FILLED</span>`;
-        if (o.status === 'REJECTED') {
+        if (isTrade) {
+          statusBadge = `<span class="badge badge-success" style="background:rgba(16,185,129,0.25);">EXECUTED</span>`;
+        } else if (it.status === 'REJECTED') {
           statusBadge = `<span class="badge badge-danger">FAILED / REJECTED</span>`;
-        } else if (o.status === 'CANCELLED') {
+        } else if (it.status === 'CANCELLED') {
           statusBadge = `<span class="badge badge-amber">CANCELLED</span>`;
-        } else if (o.status === 'PARTIALLY_FILLED') {
+        } else if (it.status === 'PARTIALLY_FILLED') {
           statusBadge = `<span class="badge badge-blue">PARTIAL</span>`;
-        } else if (o.status === 'ACCEPTED' || o.status === 'PENDING') {
+        } else if (it.status === 'ACCEPTED' || it.status === 'PENDING') {
           statusBadge = `<span class="badge badge-blue">ACCEPTED</span>`;
         }
 
-        const sideClass = o.side === 'BUY' ? 'tag-buy' : (o.side === 'SELL' ? 'tag-sell' : 'tag-short');
-        const limitStr = o.limit_price ? `$${parseFloat(o.limit_price).toFixed(2)}` : '--';
-        const filledQty = o.filled_quantity !== undefined ? parseFloat(o.filled_quantity).toFixed(1) : (o.status === 'FILLED' ? parseFloat(o.quantity).toFixed(1) : '0.0');
+        const sideClass = it.side === 'BUY' ? 'tag-buy' : (it.side === 'SELL' ? 'tag-sell' : 'tag-short');
 
+        // Price display
+        let priceStr = '--';
+        if (isTrade) {
+          priceStr = `$${it.price.toFixed(2)}`;
+        } else {
+          priceStr = it.price ? `$${it.price.toFixed(2)}` : (it.order_type || 'MARKET');
+        }
+
+        // Filled display
+        const filledStr = it.filled_quantity !== null && it.filled_quantity !== undefined ? it.filled_quantity.toFixed(1) : '--';
+
+        // Cost basis display (for sells)
+        let costBasisStr = '--';
+        if (isTrade && it.cost_basis !== null && it.cost_basis !== undefined && (it.side === 'SELL' || it.side === 'SELL_SHORT')) {
+          costBasisStr = `$${it.cost_basis.toFixed(2)}`;
+        }
+
+        // Gain / Loss display
+        let gainLossHtml = '--';
+        if (isTrade && (it.side === 'SELL' || it.side === 'SELL_SHORT') && it.realized_pnl !== null && it.realized_pnl !== undefined) {
+          const pnl = it.realized_pnl;
+          const pnlPct = it.realized_pnl_pct !== null && it.realized_pnl_pct !== undefined ? it.realized_pnl_pct : 0;
+          const sign = pnl >= 0 ? '+' : '';
+          const pnlClass = pnl >= 0 ? 'positive' : 'negative';
+          gainLossHtml = `<span class="${pnlClass}" style="font-weight:700;">${sign}$${pnl.toFixed(2)} (${sign}${pnlPct.toFixed(2)}%)</span>`;
+        }
+
+        // Notes & Execution details
         let notesHtml = '--';
-        if (o.status === 'REJECTED') {
-          notesHtml = `<div class="reason-box">⚠️ ${o.reject_reason || 'Order rejected by risk engine'}</div>`;
-        } else if (o.status === 'CANCELLED') {
+        if (isTrade) {
+          notesHtml = `<span style="color:var(--text-muted); font-size:11px;">Notional: $${it.notional.toLocaleString(undefined, {minimumFractionDigits: 2})} | Comm: $${it.commission.toFixed(2)}</span>`;
+        } else if (it.status === 'REJECTED') {
+          notesHtml = `<div class="reason-box">⚠️ ${it.reject_reason || 'Order rejected by risk engine'}</div>`;
+        } else if (it.status === 'CANCELLED') {
           notesHtml = `<span style="color:var(--accent-amber); font-size:11px;">Cancelled</span>`;
-        } else if (o.status === 'FILLED') {
+        } else if (it.status === 'FILLED') {
           notesHtml = `<span style="color:var(--accent-green); font-size:11px;">100% Executed</span>`;
         }
 
-        const rawTime = o.trading_time || o.sim_created_at || o.created_at;
-        const timeStr = formatDateTimeET(rawTime);
+        const timeStr = formatDateTimeET(it.time);
+        const idDisplay = isTrade 
+          ? `<code>${it.trade_id.substring(0, 16)}</code>${it.order_id ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">Ord: <code>${it.order_id.substring(0, 8)}</code></div>` : ''}`
+          : `<code>${it.order_id.substring(0, 18)}</code>`;
+
+        const rowId = isTrade ? `trade-row-${it.trade_id}` : `order-row-${it.order_id}`;
+        const locateId = it.order_id || it.trade_id;
 
         return `
-          <tr id="order-row-${o.order_id}" class="order-row">
+          <tr id="${rowId}" data-order-id="${it.order_id}" class="order-row ${isTrade ? 'trade-row' : ''}">
             <td>
-              <button onclick="locateOrderOnChart('${o.order_id}')" class="btn-locate" title="Locate on trending chart">🎯 Locate</button>
+              <button onclick="locateOrderOnChart('${locateId}')" class="btn-locate" title="Locate on trending chart">🎯 Locate</button>
             </td>
             <td>${idx + 1}</td>
+            <td>${typeBadge}</td>
             <td style="font-family:monospace; color:var(--text-muted);">${timeStr}</td>
-            <td><code>${o.order_id.substring(0, 18)}</code></td>
-            <td><strong>${o.ticker}</strong></td>
-            <td class="${sideClass}">${o.side}</td>
-            <td>${o.order_type}</td>
-            <td>${parseFloat(o.quantity).toFixed(2)}</td>
-            <td style="font-weight:700;">${filledQty}</td>
-            <td>${limitStr}</td>
+            <td>${idDisplay}</td>
+            <td><strong>${it.ticker}</strong></td>
+            <td class="${sideClass}">${it.side}</td>
+            <td>${priceStr}</td>
+            <td>${it.quantity.toFixed(2)}</td>
+            <td style="font-weight:700;">${filledStr}</td>
+            <td>${costBasisStr}</td>
+            <td>${gainLossHtml}</td>
             <td>${statusBadge}</td>
             <td>${notesHtml}</td>
           </tr>
         `;
       }).join('');
-    }
-
-    function renderTradesTable(trades) {
-      const tbody = document.getElementById('trades-body');
-      if (!trades || trades.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>';
-        return;
-      }
-      tbody.innerHTML = trades.map((t, idx) => `
-        <tr>
-          <td>${idx + 1}</td>
-          <td style="font-family:monospace; color:var(--text-muted);">${formatDateTimeET(t.timestamp)}</td>
-          <td><code>${(t.trade_id || '').substring(0, 16)}</code></td>
-          <td><code>${(t.order_id || '').substring(0, 16)}</code></td>
-          <td><strong>${t.ticker}</strong></td>
-          <td style="font-weight:700; color:${t.side === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'};">${t.side}</td>
-          <td>$${parseFloat(t.price).toFixed(2)}</td>
-          <td>${parseFloat(t.quantity).toFixed(2)}</td>
-          <td>$${parseFloat(t.notional || (t.price * t.quantity)).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-          <td>$${parseFloat(t.commission || 0).toFixed(2)}</td>
-        </tr>
-      `).join('');
     }
 
     function renderPositionsTable(positionsMap) {
@@ -1625,7 +1877,7 @@
     function selectPassFromCatalog(passId) {
       const selector = document.getElementById('pass-selector');
       selector.value = passId;
-      switchTab('orders');
+      switchTab('activity');
       onPassSelect(passId);
     }
 
@@ -1658,13 +1910,27 @@
         equityChart.update();
       }
 
-      document.getElementById('orders-body').innerHTML = `<tr><td colspan="12" style="color:var(--text-muted); text-align:center; padding:30px;">No finished simulation pass selected</td></tr>`;
-      document.getElementById('trades-body').innerHTML = `<tr><td colspan="10" style="color:var(--text-muted); text-align:center; padding:30px;">No trades executed</td></tr>`;
+      const actBody = document.getElementById('activity-body');
+      if (actBody) actBody.innerHTML = `<tr><td colspan="14" style="color:var(--text-muted); text-align:center; padding:30px;">No finished simulation pass selected</td></tr>`;
       document.getElementById('positions-body').innerHTML = `<tr><td colspan="7" style="color:var(--text-muted); text-align:center; padding:30px;">No positions held</td></tr>`;
     }
 
     function switchTab(tabName) {
-      const tabs = ['orders', 'trades', 'positions', 'catalog', 'ledger'];
+      if (tabName === 'orders') {
+        tabName = 'activity';
+        const chkOrders = document.getElementById('filter-check-orders');
+        const chkTrades = document.getElementById('filter-check-trades');
+        if (chkOrders && chkTrades) { chkOrders.checked = true; chkTrades.checked = false; }
+        renderActivityTable();
+      } else if (tabName === 'trades') {
+        tabName = 'activity';
+        const chkOrders = document.getElementById('filter-check-orders');
+        const chkTrades = document.getElementById('filter-check-trades');
+        if (chkOrders && chkTrades) { chkOrders.checked = false; chkTrades.checked = true; }
+        renderActivityTable();
+      }
+
+      const tabs = ['activity', 'positions', 'catalog', 'ledger'];
       tabs.forEach(t => {
         const el = document.getElementById(`tab-${t}`);
         if (el) el.style.display = (t === tabName) ? 'block' : 'none';
