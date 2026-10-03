@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SimTrade | Simulation Passes & Order Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
   <style>
     :root {
       --bg-dark: #0f172a;
@@ -411,13 +412,37 @@
       <div class="panel-title">
         <span>Portfolio Asset Composition & Equity Trend (<span id="chart-pass-label">--</span>) &mdash; <span style="font-size:12px; color:var(--accent-blue); font-weight:normal;">Regular Trading Hours (09:30&ndash;16:00 ET)</span></span>
       </div>
-      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <!-- Range Presets -->
+        <div class="res-buttons">
+          <span style="font-size:11px; color:var(--text-muted); padding: 0 4px; font-weight:600;">Range:</span>
+          <button id="range-all" class="res-btn active" onclick="setChartRangePreset('all')">All</button>
+          <button id="range-1w" class="res-btn" onclick="setChartRangePreset('1w')">1W</button>
+          <button id="range-3d" class="res-btn" onclick="setChartRangePreset('3d')">3D</button>
+          <button id="range-1d" class="res-btn" onclick="setChartRangePreset('1d')">1D</button>
+        </div>
+
+        <!-- Day Navigator -->
+        <div class="res-buttons" style="gap:2px;">
+          <button id="btn-day-prev" class="res-btn" onclick="stepChartDay(-1)" title="Previous Trading Day">◀</button>
+          <select id="chart-day-select" onchange="onChartDaySelect(this.value)" style="background:var(--bg-dark); color:var(--text-main); border:none; font-size:11px; font-weight:600; padding:2px 4px; outline:none; cursor:pointer; max-width:180px;">
+            <option value="">Select Day...</option>
+          </select>
+          <button id="btn-day-next" class="res-btn" onclick="stepChartDay(1)" title="Next Trading Day">▶</button>
+        </div>
+
+        <!-- Reset Zoom Button -->
+        <button id="btn-reset-zoom" onclick="resetChartZoom()" style="background:#1e293b; color:var(--accent-blue); border:1px solid var(--border); padding:3px 8px; font-size:11px; font-weight:700; border-radius:6px; cursor:pointer; display:none;" title="Reset viewport & zoom">↺ Reset Zoom</button>
+
+        <!-- View Mode: Combined / Equity / Allocation -->
         <div class="res-buttons">
           <span style="font-size:11px; color:var(--text-muted); padding: 0 4px; font-weight:600;">View:</span>
           <button id="view-combined" class="res-btn active" onclick="setChartViewMode('combined')">Combined</button>
           <button id="view-equity" class="res-btn" onclick="setChartViewMode('equity')">Net Equity Only</button>
           <button id="view-allocation" class="res-btn" onclick="setChartViewMode('allocation')">Asset Allocation</button>
         </div>
+
+        <!-- Resolution: Auto / 1m / 5m / 15m -->
         <div class="res-buttons">
           <span style="font-size:11px; color:var(--text-muted); padding: 0 4px; font-weight:600;">Resolution:</span>
           <button id="res-auto" class="res-btn active" onclick="setChartResolution('auto')">Auto</button>
@@ -425,11 +450,24 @@
           <button id="res-5m" class="res-btn" onclick="setChartResolution('5m')">5m</button>
           <button id="res-15m" class="res-btn" onclick="setChartResolution('15m')">15m</button>
         </div>
-        <span id="chart-date-range" style="font-size: 12px; color: var(--text-muted);">--</span>
+
+        <span id="chart-date-range" style="font-size: 11px; color: var(--text-muted);">--</span>
       </div>
     </div>
     <div style="height: 350px;">
       <canvas id="equityChart"></canvas>
+    </div>
+    <!-- Interactive Viewport Scrubber & Range Info -->
+    <div id="chart-scrubber-bar" style="margin-top:8px; background:rgba(15, 23, 42, 0.7); border:1px solid var(--border); border-radius:6px; padding:6px 12px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:260px;">
+        <span style="font-size:11px; color:var(--text-muted); font-weight:600; white-space:nowrap;">Viewport Scrubber:</span>
+        <input type="range" id="scrubber-start" min="0" max="100" value="0" step="0.2" oninput="onScrubberInput('start')" style="flex:1; accent-color:var(--accent-blue); cursor:pointer; height:4px;" title="Drag to adjust viewport start">
+        <span style="font-size:11px; color:var(--text-muted);">to</span>
+        <input type="range" id="scrubber-end" min="0" max="100" value="100" step="0.2" oninput="onScrubberInput('end')" style="flex:1; accent-color:var(--accent-blue); cursor:pointer; height:4px;" title="Drag to adjust viewport end">
+      </div>
+      <div id="chart-viewport-summary" style="font-size:11px; font-family:monospace; color:var(--accent-blue); font-weight:600; white-space:nowrap;">
+        Showing All
+      </div>
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px; font-size:11px; color:var(--text-muted); padding: 0 4px; flex-wrap:wrap; gap:8px;">
       <div style="display:flex; align-items:center; gap:16px;">
@@ -603,10 +641,185 @@
     let currentResolution = 'auto'; // 'auto' | '1m' | '5m' | '15m'
     let currentViewMode = 'combined'; // 'combined' | 'equity' | 'allocation'
 
+    // Viewport scaling and trading day navigation state
+    let chartTradingDays = [];       // Array of { dateStr, weekday, startMs, endMs, count, label, index }
+    let activeDayIndex = -1;         // Index into chartTradingDays, or -1 for all
+    let currentRangePreset = 'all';  // 'all' | '1w' | '3d' | '1d' | 'custom'
+    let activeViewportStartMs = null;// Epoch ms for visible start (null = all)
+    let activeViewportEndMs = null;  // Epoch ms for visible end (null = all)
+    let globalSimulationStartMs = null;
+    let globalSimulationEndMs = null;
+
     // Order points mapping for locating
     let mappedOrderPoints = []; // [{order_id, timeIndex, equity, order}]
     let chartTimeBuckets = [];  // array of bucket sim_times
     let currentPassBucketMap = null; // map of bTime -> snapshot
+
+    function extractTradingDays(snapshots) {
+      const daysMap = new Map();
+      for (const s of snapshots) {
+        const d = parseDate(s.sim_time);
+        if (!d || !isRegularTradingHoursET(d)) continue;
+        const parts = getETParts(d);
+        const dateStr = parts.dateStr;
+        const ms = d.getTime();
+        if (!daysMap.has(dateStr)) {
+          const weekday = new Intl.DateTimeFormat('en-US', { timeZone: ET_TIMEZONE, weekday: 'short' }).format(d);
+          daysMap.set(dateStr, {
+            dateStr: dateStr,
+            weekday: weekday,
+            startMs: ms,
+            endMs: ms,
+            count: 1
+          });
+        } else {
+          const entry = daysMap.get(dateStr);
+          entry.endMs = Math.max(entry.endMs, ms);
+          entry.count++;
+        }
+      }
+      const days = Array.from(daysMap.values()).sort((a, b) => a.startMs - b.startMs);
+      days.forEach((day, idx) => {
+        day.index = idx;
+        day.label = `Day ${idx + 1}: ${day.weekday} ${day.dateStr.substring(5)}`;
+      });
+      return days;
+    }
+
+    function populateDaySelector() {
+      const sel = document.getElementById('chart-day-select');
+      if (!sel) return;
+      sel.innerHTML = '';
+
+      if (chartTradingDays.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No Trading Days';
+        sel.appendChild(opt);
+        return;
+      }
+
+      const defOpt = document.createElement('option');
+      defOpt.value = '';
+      defOpt.textContent = 'Select Day...';
+      sel.appendChild(defOpt);
+
+      chartTradingDays.forEach((d, idx) => {
+        const opt = document.createElement('option');
+        opt.value = String(idx);
+        opt.textContent = `${d.label} (${d.count}m)`;
+        sel.appendChild(opt);
+      });
+    }
+
+    function stepChartDay(delta) {
+      if (chartTradingDays.length === 0) return;
+      if (activeDayIndex < 0) {
+        activeDayIndex = delta > 0 ? 0 : chartTradingDays.length - 1;
+      } else {
+        activeDayIndex = Math.max(0, Math.min(chartTradingDays.length - 1, activeDayIndex + delta));
+      }
+      const sel = document.getElementById('chart-day-select');
+      if (sel) sel.value = String(activeDayIndex);
+      setChartRangePreset('1d');
+    }
+
+    function onChartDaySelect(val) {
+      if (val === '' || isNaN(parseInt(val, 10))) {
+        setChartRangePreset('all');
+        return;
+      }
+      activeDayIndex = parseInt(val, 10);
+      setChartRangePreset('1d');
+    }
+
+    function setChartRangePreset(preset) {
+      currentRangePreset = preset;
+      if (chartTradingDays.length === 0) return;
+
+      const sel = document.getElementById('chart-day-select');
+      const resetBtn = document.getElementById('btn-reset-zoom');
+
+      if (preset === 'all') {
+        activeViewportStartMs = null;
+        activeViewportEndMs = null;
+        if (sel) sel.value = '';
+        if (resetBtn) resetBtn.style.display = 'none';
+      } else if (preset === '1d') {
+        if (activeDayIndex < 0 || activeDayIndex >= chartTradingDays.length) {
+          activeDayIndex = 0;
+        }
+        if (sel) sel.value = String(activeDayIndex);
+        const d = chartTradingDays[activeDayIndex];
+        activeViewportStartMs = d.startMs;
+        activeViewportEndMs = d.endMs;
+        if (resetBtn) resetBtn.style.display = 'inline-block';
+      } else if (preset === '3d') {
+        const endIdx = activeDayIndex >= 0 ? activeDayIndex : chartTradingDays.length - 1;
+        const startIdx = Math.max(0, endIdx - 2);
+        activeViewportStartMs = chartTradingDays[startIdx].startMs;
+        activeViewportEndMs = chartTradingDays[endIdx].endMs;
+        if (sel) sel.value = String(endIdx);
+        if (resetBtn) resetBtn.style.display = 'inline-block';
+      } else if (preset === '1w') {
+        const endIdx = activeDayIndex >= 0 ? activeDayIndex : chartTradingDays.length - 1;
+        const startIdx = Math.max(0, endIdx - 4);
+        activeViewportStartMs = chartTradingDays[startIdx].startMs;
+        activeViewportEndMs = chartTradingDays[endIdx].endMs;
+        if (sel) sel.value = String(endIdx);
+        if (resetBtn) resetBtn.style.display = 'inline-block';
+      }
+
+      // Update button active classes
+      document.querySelectorAll('.res-btn[id^="range-"]').forEach(b => {
+        b.classList.toggle('active', b.id === `range-${currentRangePreset}`);
+      });
+
+      // Reset plugin zoom if any so new viewport bounds render cleanly
+      if (equityChart && typeof equityChart.resetZoom === 'function') {
+        equityChart.resetZoom();
+      }
+
+      buildAndRenderChart();
+    }
+
+    function onScrubberInput(which) {
+      if (!globalSimulationStartMs || !globalSimulationEndMs) return;
+      const startSlider = document.getElementById('scrubber-start');
+      const endSlider = document.getElementById('scrubber-end');
+      let sVal = parseFloat(startSlider.value);
+      let eVal = parseFloat(endSlider.value);
+
+      if (which === 'start' && sVal >= eVal) {
+        sVal = Math.max(0, eVal - 1);
+        startSlider.value = sVal;
+      } else if (which === 'end' && eVal <= sVal) {
+        eVal = Math.min(100, sVal + 1);
+        endSlider.value = eVal;
+      }
+
+      const span = globalSimulationEndMs - globalSimulationStartMs;
+      activeViewportStartMs = globalSimulationStartMs + span * (sVal / 100);
+      activeViewportEndMs = globalSimulationStartMs + span * (eVal / 100);
+
+      currentRangePreset = 'custom';
+      document.querySelectorAll('.res-btn[id^="range-"]').forEach(b => b.classList.remove('active'));
+      const resetBtn = document.getElementById('btn-reset-zoom');
+      if (resetBtn) resetBtn.style.display = 'inline-block';
+
+      if (equityChart && typeof equityChart.resetZoom === 'function') {
+        equityChart.resetZoom();
+      }
+
+      buildAndRenderChart();
+    }
+
+    function resetChartZoom() {
+      if (equityChart && typeof equityChart.resetZoom === 'function') {
+        equityChart.resetZoom();
+      }
+      setChartRangePreset('all');
+    }
 
     const TICKER_PALETTE = [
       '#38bdf8', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6',
@@ -681,6 +894,9 @@
         if (!chartArea || !x) return;
 
         ctx.save();
+        ctx.beginPath();
+        ctx.rect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, chartArea.bottom - chartArea.top);
+        ctx.clip();
 
         const totalLabels = chart.data.labels ? chart.data.labels.length : 0;
         let slotWidth = 10;
@@ -763,17 +979,37 @@
             if (ds && ds.id === 'orders-dataset') {
               const pt = ds.data[el.index];
               if (pt && pt.order_id) {
-                switchTab('orders');
-                const row = document.getElementById(`order-row-${pt.order_id}`);
-                if (row) {
-                  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  document.querySelectorAll('.order-row').forEach(r => r.classList.remove('order-row-highlight'));
-                  row.classList.add('order-row-highlight');
-                }
+                switchTab('activity');
+                locateOrderOnChart(pt.order_id);
               }
             }
           },
           plugins: {
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x',
+                modifierKey: null,
+                onPanComplete: ({ chart }) => {
+                  const resetBtn = document.getElementById('btn-reset-zoom');
+                  if (resetBtn) resetBtn.style.display = 'inline-block';
+                }
+              },
+              zoom: {
+                wheel: {
+                  enabled: true,
+                  speed: 0.08
+                },
+                pinch: {
+                  enabled: true
+                },
+                mode: 'x',
+                onZoomComplete: ({ chart }) => {
+                  const resetBtn = document.getElementById('btn-reset-zoom');
+                  if (resetBtn) resetBtn.style.display = 'inline-block';
+                }
+              }
+            },
             legend: {
               display: true,
               position: 'top',
@@ -977,6 +1213,27 @@
           failed_orders: failedCount,
         });
 
+        // Extract trading days and populate day selector
+        const rthSnapshots = (rec.snapshots || []).filter(s => {
+          const d = parseDate(s.sim_time);
+          return d && isRegularTradingHoursET(d);
+        });
+        chartTradingDays = extractTradingDays(rthSnapshots.length > 0 ? rthSnapshots : (rec.snapshots || []));
+        populateDaySelector();
+
+        // Reset viewport state for new pass
+        activeDayIndex = chartTradingDays.length > 0 ? 0 : -1;
+        currentRangePreset = 'all';
+        activeViewportStartMs = null;
+        activeViewportEndMs = null;
+        globalSimulationStartMs = null;
+        globalSimulationEndMs = null;
+        const resetBtn = document.getElementById('btn-reset-zoom');
+        if (resetBtn) resetBtn.style.display = 'none';
+        document.querySelectorAll('.res-btn[id^="range-"]').forEach(b => {
+          b.classList.toggle('active', b.id === 'range-all');
+        });
+
         // Redraw Stacked Bars + Equity Curve + Order Pins
         buildAndRenderChart();
 
@@ -1046,10 +1303,30 @@
         rthSnapshots = snapshots;
       }
 
+      // Establish global simulation start and end ms
+      if (globalSimulationStartMs === null || globalSimulationEndMs === null) {
+        globalSimulationStartMs = parseDate(rthSnapshots[0].sim_time).getTime();
+        globalSimulationEndMs = parseDate(rthSnapshots[rthSnapshots.length - 1].sim_time).getTime();
+      }
+
+      // Filter to active viewport if set
+      let visibleSnapshots = rthSnapshots;
+      if (activeViewportStartMs !== null && activeViewportEndMs !== null) {
+        const filtered = rthSnapshots.filter(s => {
+          const d = parseDate(s.sim_time);
+          if (!d) return false;
+          const ms = d.getTime();
+          return ms >= activeViewportStartMs && ms <= activeViewportEndMs;
+        });
+        if (filtered.length > 0) {
+          visibleSnapshots = filtered;
+        }
+      }
+
       // 1. Determine effective time bucket interval
       let stepMins = 5;
-      const tStart = parseDate(rthSnapshots[0].sim_time).getTime();
-      const tEnd = parseDate(rthSnapshots[rthSnapshots.length - 1].sim_time).getTime();
+      const tStart = parseDate(visibleSnapshots[0].sim_time).getTime();
+      const tEnd = parseDate(visibleSnapshots[visibleSnapshots.length - 1].sim_time).getTime();
       const totalSpanMins = Math.max(1, (tEnd - tStart) / 60000);
 
       if (currentResolution === '1m') stepMins = 1;
@@ -1057,9 +1334,10 @@
       else if (currentResolution === '15m') stepMins = 15;
       else {
         // Auto
-        if (totalSpanMins <= 360) stepMins = 1;
-        else if (totalSpanMins <= 2880) stepMins = 5;
-        else stepMins = 15;
+        if (totalSpanMins <= 420) stepMins = 1;       // 1 Day (390 mins) -> 1-minute resolution!
+        else if (totalSpanMins <= 1500) stepMins = 3; // <= ~3 days -> 3m
+        else if (totalSpanMins <= 3000) stepMins = 5; // <= ~1 week -> 5m
+        else stepMins = 15;                           // Full span -> 15m
       }
 
       const stepMs = stepMins * 60 * 1000;
@@ -1069,7 +1347,7 @@
       currentPassBucketMap = bucketMap;
       const allTickersSet = new Set();
 
-      for (const s of rthSnapshots) {
+      for (const s of visibleSnapshots) {
         const d = parseDate(s.sim_time);
         if (!d) continue;
         const timeMs = d.getTime();
@@ -1239,12 +1517,20 @@
       const pointBorderColors = [];
       const pointRadii = [];
 
+      const firstBucketMs = sortedBucketKeys.length > 0 ? sortedBucketKeys[0] : 0;
+      const lastBucketMs = sortedBucketKeys.length > 0 ? sortedBucketKeys[sortedBucketKeys.length - 1] : 0;
+
       for (const o of orders) {
         const rawTime = o.trading_time || o.sim_created_at || o.created_at;
         if (!rawTime) continue;
         const oDate = parseDate(rawTime);
         if (!oDate) continue;
         const oTime = oDate.getTime();
+
+        // Skip orders outside visible bucket range
+        if (sortedBucketKeys.length > 0 && (oTime < firstBucketMs - stepMs || oTime > lastBucketMs + stepMs)) {
+          continue;
+        }
 
         // Find closest bucket index
         let closestIdx = 0;
@@ -1408,33 +1694,112 @@
       }
 
       if (equityChart.options && equityChart.options.scales && equityChart.options.scales.y) {
-        equityChart.options.scales.y.stacked = (currentViewMode !== 'equity');
+        const isNetEquityOnly = (currentViewMode === 'equity');
+        equityChart.options.scales.y.stacked = !isNetEquityOnly;
+        if (isNetEquityOnly && equitySeries.length > 0) {
+          let minEq = Infinity;
+          let maxEq = -Infinity;
+          for (const eq of equitySeries) {
+            if (eq < minEq) minEq = eq;
+            if (eq > maxEq) maxEq = eq;
+          }
+          const initCap = currentPassRecord.summary ? currentPassRecord.summary.initial_capital : 100000;
+          if (minEq > initCap) minEq = initCap;
+          if (maxEq < initCap) maxEq = initCap;
+
+          if (minEq !== Infinity && maxEq !== -Infinity) {
+            const span = Math.max(100, maxEq - minEq);
+            const pad = span * 0.08;
+            equityChart.options.scales.y.min = Math.floor(minEq - pad);
+            equityChart.options.scales.y.max = Math.ceil(maxEq + pad);
+            equityChart.options.scales.y.beginAtZero = false;
+          }
+        } else {
+          equityChart.options.scales.y.min = 0;
+          delete equityChart.options.scales.y.max;
+          equityChart.options.scales.y.beginAtZero = true;
+        }
       }
       equityChart.data.labels = labels;
       equityChart.data.datasets = datasets;
       equityChart.update();
 
-      const firstStr = formatDateTimeET(rthSnapshots[0].sim_time, false);
-      const lastStr = formatDateTimeET(rthSnapshots[rthSnapshots.length - 1].sim_time, false);
+      const firstStr = formatDateTimeET(visibleSnapshots[0].sim_time, false);
+      const lastStr = formatDateTimeET(visibleSnapshots[visibleSnapshots.length - 1].sim_time, false);
       document.getElementById('chart-date-range').textContent = `${firstStr} → ${lastStr} (${labels.length} bars @ ${stepMins}m ET)`;
+
+      // Synchronize scrubber sliders and summary
+      const startSlider = document.getElementById('scrubber-start');
+      const endSlider = document.getElementById('scrubber-end');
+      const summaryEl = document.getElementById('chart-viewport-summary');
+      const totalSpan = Math.max(1, (globalSimulationEndMs || 1) - (globalSimulationStartMs || 0));
+
+      if (activeViewportStartMs !== null && activeViewportEndMs !== null && globalSimulationStartMs !== null) {
+        const sPct = Math.max(0, Math.min(100, ((activeViewportStartMs - globalSimulationStartMs) / totalSpan) * 100));
+        const ePct = Math.max(0, Math.min(100, ((activeViewportEndMs - globalSimulationStartMs) / totalSpan) * 100));
+        if (startSlider) startSlider.value = sPct;
+        if (endSlider) endSlider.value = ePct;
+        if (summaryEl) summaryEl.textContent = `Showing: ${firstStr} → ${lastStr} (${labels.length} bars @ ${stepMins}m ET)`;
+      } else {
+        if (startSlider) startSlider.value = 0;
+        if (endSlider) endSlider.value = 100;
+        if (summaryEl) summaryEl.textContent = `Showing All: ${chartTradingDays.length} Days (${labels.length} bars @ ${stepMins}m ET)`;
+      }
     }
 
     function locateOrderOnChart(orderId) {
       // 1. Scroll chart into view
       document.getElementById('chart-container-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-      // 2. Find order point
-      const ptIndex = mappedOrderPoints.findIndex(p => p.order_id === orderId);
-      if (ptIndex !== -1 && equityChart) {
-        const dsIndex = equityChart.data.datasets.findIndex(d => d.id === 'orders-dataset');
-        if (dsIndex !== -1) {
-          equityChart.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }]);
-          equityChart.tooltip.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }], { x: 0, y: 0 });
-          equityChart.update();
+      // 2. Find order in orders or trades list to get its timestamp
+      let targetItem = (currentOrdersList || []).find(o => o.order_id === orderId);
+      if (!targetItem && currentTradesList) {
+        targetItem = currentTradesList.find(t => t.order_id === orderId || t.trade_id === orderId);
+      }
+
+      let jumpedDay = false;
+      if (targetItem) {
+        const rawTime = targetItem.trading_time || targetItem.sim_created_at || targetItem.created_at || targetItem.sim_timestamp;
+        const oDate = parseDate(rawTime);
+        if (oDate) {
+          const oTime = oDate.getTime();
+          // Check if order falls outside current active viewport
+          const outside = (activeViewportStartMs !== null && oTime < activeViewportStartMs - 60000) ||
+                          (activeViewportEndMs !== null && oTime > activeViewportEndMs + 60000);
+          if (outside && chartTradingDays.length > 0) {
+            const oParts = getETParts(oDate);
+            const dayIdx = chartTradingDays.findIndex(d => d.dateStr === oParts.dateStr);
+            if (dayIdx !== -1) {
+              activeDayIndex = dayIdx;
+              const sel = document.getElementById('chart-day-select');
+              if (sel) sel.value = String(dayIdx);
+              setChartRangePreset('1d');
+              jumpedDay = true;
+            }
+          }
         }
       }
 
-      // 3. Highlight matching row(s) in activity table
+      // 3. Highlight order pin on chart (wait a tick if chart re-rendered)
+      const highlightPin = () => {
+        const ptIndex = mappedOrderPoints.findIndex(p => p.order_id === orderId);
+        if (ptIndex !== -1 && equityChart) {
+          const dsIndex = equityChart.data.datasets.findIndex(d => d.id === 'orders-dataset');
+          if (dsIndex !== -1) {
+            equityChart.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }]);
+            equityChart.tooltip.setActiveElements([{ datasetIndex: dsIndex, index: ptIndex }], { x: 0, y: 0 });
+            equityChart.update();
+          }
+        }
+      };
+
+      if (jumpedDay) {
+        setTimeout(highlightPin, 80);
+      } else {
+        highlightPin();
+      }
+
+      // 4. Highlight matching row(s) in activity table
       document.querySelectorAll('.order-row').forEach(r => r.classList.remove('order-row-highlight'));
       const rows = document.querySelectorAll(`[id*="${orderId}"], [data-order-id="${orderId}"]`);
       rows.forEach(r => r.classList.add('order-row-highlight'));
